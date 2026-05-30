@@ -41,6 +41,8 @@
   "cancelMessageDesc": "Cancel current response",
   "toggleFullAuto": "Act Without Asking",
   "toggleFullAutoDesc": "Toggle auto-approve all actions",
+  "toggleWordWrap": "Toggle Word Wrap",
+  "toggleWordWrapDesc": "Toggle code word wrap on/off",
   "focusNextPane": "Focus Next Pane",
   "focusNextPaneDesc": "Move focus to the next pane",
   "focusPrevPane": "Focus Previous Pane",

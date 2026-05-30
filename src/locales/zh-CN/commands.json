@@ -41,6 +41,8 @@
   "cancelMessageDesc": "取消当前响应",
   "toggleFullAuto": "免确认执行",
   "toggleFullAutoDesc": "切换自动放行所有操作",
+  "toggleWordWrap": "切换代码换行",
+  "toggleWordWrapDesc": "切换代码自动换行开关",
   "focusNextPane": "聚焦下一个窗格",
   "focusNextPaneDesc": "将焦点移到下一个窗格",
   "focusPrevPane": "聚焦上一个窗格",

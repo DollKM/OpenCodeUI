@@ -32,6 +32,8 @@ export type KeybindingAction =
   | 'copyLastResponse'
   // Permission
   | 'toggleFullAuto'
+  // View
+  | 'toggleWordWrap'
   // Pane
   | 'focusNextPane'
   | 'focusPrevPane'
@@ -235,8 +237,8 @@ const DEFAULT_KEYBINDINGS: KeybindingConfig[] = [
     action: 'sendMessage',
     label: 'Send Message',
     description: 'Send current message',
-    defaultKey: 'Ctrl+Enter',
-    currentKey: 'Ctrl+Enter',
+    defaultKey: 'Enter',
+    currentKey: 'Enter',
     category: 'message',
     scope: 'global',
   },
@@ -267,6 +269,17 @@ const DEFAULT_KEYBINDINGS: KeybindingConfig[] = [
     defaultKey: 'Alt+Y',
     currentKey: 'Alt+Y',
     category: 'permission',
+    scope: 'global',
+  },
+
+  // View
+  {
+    action: 'toggleWordWrap',
+    label: 'Toggle Word Wrap',
+    description: 'Toggle code word wrap on/off',
+    defaultKey: 'Shift+Enter',
+    currentKey: 'Shift+Enter',
+    category: 'message',
     scope: 'global',
   },
 

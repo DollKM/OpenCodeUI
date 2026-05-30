@@ -18,6 +18,7 @@ import { keybindingStore } from './store/keybindingStore'
 import {
   layoutStore,
   paneLayoutStore,
+  themeStore,
   useLayoutStore,
   usePaneController,
   usePaneControllers,
@@ -291,6 +292,7 @@ function App() {
       cancelMessage: () => focusedController?.cancelMessage(),
       copyLastResponse: () => focusedController?.copyLastResponse(),
       toggleFullAuto: () => focusedController?.toggleFullAuto(),
+      toggleWordWrap: () => themeStore.setCodeWordWrap(!themeStore.codeWordWrap),
       // Pane
       focusNextPane: () => {
         paneLayoutStore.focusNextPane()

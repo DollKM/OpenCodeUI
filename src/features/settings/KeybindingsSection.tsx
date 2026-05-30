@@ -31,6 +31,7 @@ const ACTION_TRANSLATION_KEYS: Record<KeybindingAction, { label: string; descrip
   cancelMessage: { label: 'cancelMessage', description: 'cancelMessageDesc' },
   copyLastResponse: { label: 'copyLastResponse', description: 'copyLastResponseDesc' },
   toggleFullAuto: { label: 'toggleFullAuto', description: 'toggleFullAutoDesc' },
+  toggleWordWrap: { label: 'toggleWordWrap', description: 'toggleWordWrapDesc' },
   focusNextPane: { label: 'focusNextPane', description: 'focusNextPaneDesc' },
   focusPrevPane: { label: 'focusPrevPane', description: 'focusPrevPaneDesc' },
   splitRight: { label: 'splitRight', description: 'splitRightDesc' },
