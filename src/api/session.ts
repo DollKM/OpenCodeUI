@@ -46,8 +46,12 @@ function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithP
 
 /**
  * 获取当前可见用户消息对应的本轮 diff
+ * @param sinceMessageId - 如果提供，返回该消息之后所有可见用户消息的 diff 合集
  */
-export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
+/**
+ * 获取当前可见的最后一条用户消息 ID
+ */
+export async function getLastVisibleMessageId(sessionId: string, directory?: string): Promise<string | null> {
   const [session, messages] = await Promise.all([
     getSession(sessionId, directory),
     getSessionMessages(sessionId, undefined, directory),
@@ -58,6 +62,31 @@ export async function getLastTurnDiff(sessionId: string, directory?: string): Pr
   const visibleUserMessages = revertMessageId
     ? userMessages.filter(message => message.info.id < revertMessageId)
     : userMessages
+
+  return visibleUserMessages.at(-1)?.info.id ?? null
+}
+
+export async function getLastTurnDiff(sessionId: string, directory?: string, sinceMessageId?: string): Promise<FileDiff[]> {
+  const [session, messages] = await Promise.all([
+    getSession(sessionId, directory),
+    getSessionMessages(sessionId, undefined, directory),
+  ])
+
+  const userMessages = messages.filter(isUserMessage)
+  const revertMessageId = session.revert?.messageID
+  const visibleUserMessages = revertMessageId
+    ? userMessages.filter(message => message.info.id < revertMessageId)
+    : userMessages
+
+  if (sinceMessageId) {
+    const sinceIdx = visibleUserMessages.findIndex(m => m.info.id === sinceMessageId)
+    if (sinceIdx >= 0 && sinceIdx < visibleUserMessages.length - 1) {
+      const subsequent = visibleUserMessages.slice(sinceIdx + 1)
+      return subsequent.flatMap(m => m.info.summary?.diffs ?? [])
+    }
+    // checkpoint message not found or is the last message → no new changes
+    return []
+  }
 
   return visibleUserMessages.at(-1)?.info.summary?.diffs ?? []
 }

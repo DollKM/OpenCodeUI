@@ -6,12 +6,12 @@
 
 import { memo, useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon } from './Icons'
+import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon, CheckIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
-import { getLastTurnDiff, getSessionDiff } from '../api/session'
+import { getLastTurnDiff, getSessionDiff, getLastVisibleMessageId } from '../api/session'
 import { getVcsDiff, getVcsInfo } from '../api/vcs'
 import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
@@ -21,6 +21,7 @@ import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { DropdownMenu } from './ui'
 import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
+import { turnCheckpointStore } from '../store/turnCheckpointStore'
 
 // 常量
 const MIN_LIST_HEIGHT = 80
@@ -357,7 +358,12 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         } else if (mode === 'session') {
           data = await getSessionDiff(sessionId, directory)
         } else {
-          data = await getLastTurnDiff(sessionId, directory)
+          const checkpoint = turnCheckpointStore.getCheckpoint(sessionId)
+          if (checkpoint) {
+            data = await getLastTurnDiff(sessionId, directory, checkpoint.messageId)
+          } else {
+            data = await getSessionDiff(sessionId, directory)
+          }
         }
 
         if (requestId !== diffRequestIdRef.current[mode]) return
@@ -444,6 +450,23 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     if (!nextProject?.vcs) return
     await loadDiffMode(changeMode, { force: true, project: nextProject })
   }, [changeMode, loadDiffMode, loadProjectState])
+
+  // 接受本轮变更（记录 checkpoint）
+  const handleAcceptTurn = useCallback(async () => {
+    if (!sessionId) return
+    try {
+      const messageId = await getLastVisibleMessageId(sessionId, directory)
+      if (messageId) {
+        turnCheckpointStore.setCheckpoint(sessionId, messageId)
+        const nextProject = await loadProjectState()
+        if (nextProject?.vcs) {
+          await loadDiffMode('turn', { force: true, project: nextProject })
+        }
+      }
+    } catch (err) {
+      sessionErrorHandler('accept turn', err)
+    }
+  }, [sessionId, directory, loadDiffMode, loadProjectState])
 
   const handleInitGit = useCallback(async () => {
     setInitializingGit(true)
@@ -717,6 +740,19 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 })}
               </div>
             </DropdownMenu>
+
+            {/* Accept */}
+            {changeMode === 'turn' && (
+              <button
+                type="button"
+                onClick={handleAcceptTurn}
+                disabled={loading || diffs.length === 0}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors text-success-100 hover:bg-success-100/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={t('sessionChanges.acceptTurn')}
+              >
+                <CheckIcon size={14} />
+              </button>
+            )}
 
             {/* List Mode Toggle */}
             <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
