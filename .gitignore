@@ -25,6 +25,9 @@ workspace/
 # Rust
 src-tauri/target/
 
+# CodeGraph index (generated locally)
+.codegraph/
+
 # Generated material icons (copied from node_modules at postinstall)
 public/material-icons/
 
