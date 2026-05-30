@@ -124,7 +124,6 @@ export function SidePanel({
     removeDirectory,
     addDirectory,
     reorderDirectories,
-    recentProjects,
   } = useDirectory()
   const catalogDirectories = useMemo(
     () =>
@@ -150,7 +149,7 @@ export function SidePanel({
     isOpen: false,
     projectId: null,
   })
-  const [projectsExpanded, setProjectsExpanded] = useState(false)
+  const [projectsExpanded, setProjectsExpanded] = useState(true)
   const [sidebarTab, setSidebarTab] = useState<'recents' | 'active'>('recents')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
@@ -163,6 +162,7 @@ export function SidePanel({
   const recentsSelectionRootRef = useRef<HTMLDivElement>(null)
   const projectToggleRef = useRef<HTMLButtonElement>(null)
   const projectsDropdownRef = useRef<HTMLDivElement>(null)
+  const pendingAutoSelectRef = useRef(false)
   // 批量删除确认弹窗
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
@@ -277,6 +277,18 @@ export function SidePanel({
 
   const { sessions, isLoading, isLoadingMore, hasMore, search, setSearch, loadMore, deleteSession, refresh } =
     useSessionContext()
+
+  useEffect(() => {
+    if (pendingAutoSelectRef.current && !isLoading && sessions.length > 0 && currentDirectory) {
+      const mostRecent = sessions[0]
+      if (mostRecent.directory && isSameDirectory(mostRecent.directory, currentDirectory)) {
+        pendingAutoSelectRef.current = false
+        if (mostRecent.id !== selectedSessionId) {
+          onSelectSession(mostRecent)
+        }
+      }
+    }
+  }, [isLoading, sessions, onSelectSession, selectedSessionId, currentDirectory])
 
   // 缓存通过 API 拉取的 session 数据（sessions 列表中不存在的）
   const [fetchedSessions, setFetchedSessions] = useState<Record<string, ApiSession>>({})
@@ -454,14 +466,10 @@ export function SidePanel({
   }, [buildProjectGroups, savedDirectories])
 
   const selectorProjectGroups = useMemo<ProjectItem[]>(() => {
-    const sortedDirectories = [...savedDirectories].sort((a, b) => {
-      const aTime = recentProjects[a.path] || a.addedAt
-      const bTime = recentProjects[b.path] || b.addedAt
-      return bTime - aTime
-    })
+    const sortedDirectories = [...savedDirectories].sort((a, b) => b.addedAt - a.addedAt)
 
     return buildProjectGroups(sortedDirectories)
-  }, [buildProjectGroups, recentProjects, savedDirectories])
+  }, [buildProjectGroups, savedDirectories])
 
   const globalProject = useMemo<ProjectItem>(
     () => ({
@@ -595,8 +603,8 @@ export function SidePanel({
         setCurrentDirectory(undefined)
       } else {
         setCurrentDirectory(projectId)
+        pendingAutoSelectRef.current = true
       }
-      setProjectsExpanded(false)
     },
     [setCurrentDirectory],
   )
