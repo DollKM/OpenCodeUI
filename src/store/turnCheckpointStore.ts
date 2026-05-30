@@ -12,6 +12,12 @@ class TurnCheckpointStore {
   private storageKey = 'opencode-turn-checkpoints'
   private subscribers = new Set<Subscriber>()
   private cache = new Map<string, TurnCheckpoint>()
+  private unlistenStorage: (() => void) | null = null
+
+  constructor() {
+    this.load()
+    this.listenStorage()
+  }
 
   private load() {
     try {
@@ -37,25 +43,38 @@ class TurnCheckpointStore {
     this.subscribers.forEach(fn => fn())
   }
 
+  private handleStorageEvent = (e: StorageEvent) => {
+    if (e.key === this.storageKey) {
+      this.load()
+      this.notify()
+    }
+  }
+
+  private listenStorage() {
+    try {
+      window.addEventListener('storage', this.handleStorageEvent)
+      this.unlistenStorage = () => window.removeEventListener('storage', this.handleStorageEvent)
+    } catch {
+      // SSR / test environments without window
+    }
+  }
+
   subscribe = (fn: Subscriber): (() => void) => {
     this.subscribers.add(fn)
     return () => this.subscribers.delete(fn)
   }
 
   getCheckpoint(sessionId: string): TurnCheckpoint | null {
-    this.load()
     return this.cache.get(sessionId) ?? null
   }
 
   setCheckpoint(sessionId: string, messageId: string) {
-    this.load()
     this.cache.set(sessionId, { sessionId, messageId, createdAt: Date.now() })
     this.persist()
     this.notify()
   }
 
   clearCheckpoint(sessionId: string) {
-    this.load()
     if (!this.cache.delete(sessionId)) return
     this.persist()
     this.notify()
