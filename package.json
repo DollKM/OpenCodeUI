@@ -5,7 +5,7 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "typecheck": "tsc -b",
     "type-check": "npm run typecheck",
     "build": "tsc -b && vite build",
