@@ -6,6 +6,8 @@ import type { GlobalHealthResponse as HealthInfo } from '@opencode-ai/sdk/v2/cli
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 
+export type UpgradeResult = { success: true; version: string } | { success: false; error: string }
+
 /**
  * 获取服务器健康状态
  */
@@ -30,4 +32,12 @@ export async function disposeInstance(directory?: string): Promise<boolean> {
   const sdk = getSDKClient()
   unwrap(await sdk.instance.dispose({ directory: formatPathForApi(directory) }))
   return true
+}
+
+/**
+ * 升级 opencode CLI 到指定版本（不传 target 则升级到最新版）
+ */
+export async function upgradeOpencode(target?: string): Promise<UpgradeResult> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.global.upgrade(target ? { target } : undefined))
 }
