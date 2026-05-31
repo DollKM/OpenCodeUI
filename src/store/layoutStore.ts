@@ -631,7 +631,7 @@ export class LayoutStore {
 
   // 添加 Changes 标签
   addChangesTab(position: PanelPosition) {
-    return this.addTab({ type: 'changes', position })
+    return this.addSingletonTab('changes', position, 'changes')
   }
 
   // 添加 MCP 标签
