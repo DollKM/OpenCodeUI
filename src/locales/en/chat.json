@@ -10,7 +10,8 @@
     "closePanel": "Close panel",
     "openPanel": "Open panel",
     "openInVSCode": "Open in VSCode",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "changes": "Changes"
   },
   "chatArea": {
     "loadingSession": "Loading session...",

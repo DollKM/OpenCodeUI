@@ -10,7 +10,8 @@
     "closePanel": "关闭面板",
     "openPanel": "打开面板",
     "openInVSCode": "在 VSCode 中打开",
-    "integrations": "集成"
+    "integrations": "集成",
+    "changes": "变更"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",

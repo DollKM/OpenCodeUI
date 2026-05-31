@@ -78,7 +78,9 @@
     "tree": "树形",
     "treeView": "树形视图",
     "unified": "统一",
-    "split": "分栏"
+    "split": "分栏",
+    "selectModel": "选择模型",
+    "batchCommit": "按修改分批提交"
   },
   "mcpPanel": {
     "title": "MCP 服务器",

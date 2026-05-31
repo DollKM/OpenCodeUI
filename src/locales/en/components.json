@@ -79,7 +79,9 @@
     "tree": "Tree",
     "treeView": "Tree view",
     "unified": "Unified",
-    "split": "Split"
+    "split": "Split",
+    "selectModel": "Select model",
+    "batchCommit": "Batch commit by changes"
   },
   "mcpPanel": {
     "title": "MCP Servers",
