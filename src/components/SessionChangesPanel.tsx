@@ -15,14 +15,13 @@ import { getLastTurnDiff, getSessionDiff, getLastVisibleMessageId, createSession
 import { getVcsDiff, getVcsInfo } from '../api/vcs'
 import { sendMessageAsync } from '../api/message'
 import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
-import type { ModelInfo } from '../api'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
 import { getModelKey, findModelByKey, getSessionModelSelection, saveSessionModelSelection } from '../utils/modelUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
-import { DropdownMenu, IconButton } from './ui'
+import { DropdownMenu } from './ui'
 import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
 import { turnCheckpointStore } from '../store/turnCheckpointStore'
 import { useModels } from '../hooks/useModels'
@@ -100,7 +99,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const changeMode = useSessionChangeScope(sessionId)
 
   // 模型选择
-  const { models: allModels, isLoading: modelsLoading } = useModels()
+  const { models: allModels } = useModels()
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const modelMenuTriggerRef = useRef<HTMLButtonElement>(null)
@@ -772,7 +771,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 if (!selectedModel) return
                 setCommitting(true)
                 try {
-                  const parsed = getModelKey(selectedModel)
+                  getModelKey(selectedModel)
                   const newSession = await createSession({
                     title: '按修改分批提交git',
                     directory: directory || undefined,
