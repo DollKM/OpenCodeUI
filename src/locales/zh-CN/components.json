@@ -37,14 +37,16 @@
     "files": "文件",
     "changes": "变更",
     "mcp": "MCP",
-    "skills": "Skills",
+    "skills": "技能",
+    "integrations": "集成",
     "worktrees": "Worktrees",
     "tab": "标签",
     "addTab": "添加标签",
     "renameTerminal": "重命名终端",
     "moveToRight": "移动到右侧面板",
     "moveToBottom": "移动到底部面板",
-    "mcpServers": "MCP 服务器"
+    "mcpServers": "MCP 服务器",
+    "openInVSCode": "在 VSCode 中打开"
   },
   "sessionChanges": {
     "loadingChanges": "加载变更中...",
@@ -104,10 +106,19 @@
   },
   "skillPanel": {
     "title": "Skills",
-    "filterPlaceholder": "筛选 Skills...",
-    "loadingSkills": "加载 Skills...",
-    "failedToLoad": "加载 Skills 失败",
-    "noSkills": "暂无 Skills"
+    "filterPlaceholder": "搜索技能...",
+    "loadingSkills": "加载技能中...",
+    "failedToLoad": "加载技能失败",
+    "noSkills": "暂无可用技能"
+  },
+  "integrationsPanel": {
+    "title": "集成",
+    "mcpServers": "MCP",
+    "skills": "技能",
+    "plugins": "工具",
+    "filterPlugins": "搜索工具...",
+    "failedToLoadPlugins": "加载工具列表失败",
+    "noPlugins": "暂无可用工具"
   },
   "worktreePanel": {
     "selectProject": "选择项目以管理 Worktrees",

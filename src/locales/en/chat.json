@@ -8,7 +8,9 @@
     "closeBottomPanel": "Close bottom panel",
     "openBottomPanel": "Open bottom panel",
     "closePanel": "Close panel",
-    "openPanel": "Open panel"
+    "openPanel": "Open panel",
+    "openInVSCode": "Open in VSCode",
+    "integrations": "Integrations"
   },
   "chatArea": {
     "loadingSession": "Loading session...",

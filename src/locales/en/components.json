@@ -38,13 +38,15 @@
     "changes": "Changes",
     "mcp": "MCP",
     "skills": "Skills",
+    "integrations": "Integrations",
     "worktrees": "Worktrees",
     "tab": "Tab",
     "addTab": "Add Tab",
     "renameTerminal": "Rename Terminal",
     "moveToRight": "Move to Right Panel",
     "moveToBottom": "Move to Bottom Panel",
-    "mcpServers": "MCP Servers"
+    "mcpServers": "MCP Servers",
+    "openInVSCode": "Open in VSCode"
   },
   "sessionChanges": {
     "loadingChanges": "Loading changes...",
@@ -109,6 +111,15 @@
     "loadingSkills": "Loading skills...",
     "failedToLoad": "Failed to load skills",
     "noSkills": "No skills found"
+  },
+  "integrationsPanel": {
+    "title": "Integrations",
+    "mcpServers": "MCP",
+    "skills": "Skills",
+    "plugins": "Tools",
+    "filterPlugins": "Filter tools...",
+    "failedToLoadPlugins": "Failed to load tools",
+    "noPlugins": "No tools available"
   },
   "worktreePanel": {
     "selectProject": "Select a project to manage worktrees",

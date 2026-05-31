@@ -8,7 +8,9 @@
     "closeBottomPanel": "关闭底部面板",
     "openBottomPanel": "打开底部面板",
     "closePanel": "关闭面板",
-    "openPanel": "打开面板"
+    "openPanel": "打开面板",
+    "openInVSCode": "在 VSCode 中打开",
+    "integrations": "集成"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",
