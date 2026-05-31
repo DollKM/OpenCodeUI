@@ -75,6 +75,8 @@ interface ProjectItem {
   sectionKind?: 'project' | 'workspace'
 }
 
+type ProjectStatus = 'working' | 'notification'
+
 function getSelectionRange(visibleIds: string[], anchorId: string, targetId: string) {
   const startIndex = visibleIds.indexOf(anchorId)
   const endIndex = visibleIds.indexOf(targetId)
@@ -102,6 +104,14 @@ function findProjectGroupForDirectory(projects: ProjectItem[], directory: string
 
     return false
   })
+}
+
+function matchesProjectDirectory(directory: string | undefined, project: ProjectItem): boolean {
+  if (!directory) return false
+  if (isSameDirectory(project.worktree, directory)) return true
+  if (project.workspaceDirectories?.some(wd => isSameDirectory(wd, directory))) return true
+  if (project.memberDirectories?.some(md => isSameDirectory(md, directory))) return true
+  return false
 }
 
 export function SidePanel({
@@ -474,6 +484,34 @@ export function SidePanel({
   const projects = useMemo<ProjectItem[]>(() => {
     return selectorProjectGroups
   }, [selectorProjectGroups])
+
+  const projectStatusMap = useMemo(() => {
+    const map = new Map<string, ProjectStatus>()
+
+    // 1. 先标记有活跃 session 的项目为 'working'
+    for (const entry of busySessions) {
+      for (const project of selectorProjectGroups) {
+        if (matchesProjectDirectory(entry.directory, project)) {
+          map.set(project.id, 'working')
+        }
+      }
+    }
+
+    // 2. 再标记有未读通知且不在工作中的项目为 'notification'
+    for (const notif of notifications) {
+      if (notif.read || notif.type !== 'completed') continue
+      for (const project of selectorProjectGroups) {
+        if (map.get(project.id) === 'working') continue // 工作中的不覆盖
+        if (matchesProjectDirectory(notif.directory, project)) {
+          if (!map.has(project.id)) {
+            map.set(project.id, 'notification')
+          }
+        }
+      }
+    }
+
+    return map
+  }, [busySessions, notifications, selectorProjectGroups])
 
   const currentProject = useMemo<ProjectItem | null>(() => {
     if (!currentDirectory) return null
@@ -976,12 +1014,14 @@ export function SidePanel({
                             {itemLabel}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 text-[length:var(--fs-xxs)] text-text-400 truncate font-mono">
-                          <span className="truncate opacity-70">
-                            {project.worktree ? getParentPath(project.worktree) : ''}
-                          </span>
-                          {projectStatus === 'working' && <FlowingDots />}
+                        <div className="text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 font-mono">
+                          {project.worktree ? getParentPath(project.worktree) : ''}
                         </div>
+                        {projectStatus === 'working' && (
+                          <div className="flex">
+                            <FlowingDots />
+                          </div>
+                        )}
                       </div>
                     </button>
                     <button
