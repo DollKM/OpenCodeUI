@@ -66,6 +66,7 @@ import {
   Download,
   Pin,
   Square,
+  CheckSquare,
   LoaderCircle,
   CircleHelp,
   Slash,
@@ -171,6 +172,7 @@ export const DownloadIcon = wrap(Download)
 export const PinIcon = wrap(Pin)
 
 // Aliases
+export const CheckSquareIcon = wrap(CheckSquare)
 export const ComposeIcon = wrap(SquarePen)
 export const CogIcon = wrap(Settings)
 

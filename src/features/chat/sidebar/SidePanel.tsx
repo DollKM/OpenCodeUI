@@ -19,6 +19,7 @@ import {
   ChevronDownIcon,
   PencilIcon,
   CheckIcon,
+  CheckSquareIcon,
   CloseIcon,
   SpinnerIcon,
 } from '../../../components/Icons'
@@ -529,6 +530,20 @@ export function SidePanel({
 
     return list
   }, [folderProjectGroups, currentDirectory, currentProject])
+
+  const handleSelectAll = useCallback(() => {
+    const allSessionIds = sessions.map(s => s.id)
+    const allProjectIds = sidebarFolderRecents ? folderProjects.map(p => p.id) : []
+    const allSelected = allSessionIds.every(id => selectedSessionIds.has(id)) &&
+      allProjectIds.every(id => selectedProjectIds.has(id))
+    if (allSelected) {
+      setSelectedSessionIds(new Set())
+      setSelectedProjectIds(new Set())
+    } else {
+      setSelectedSessionIds(new Set(allSessionIds))
+      setSelectedProjectIds(new Set(allProjectIds))
+    }
+  }, [sessions, selectedSessionIds, selectedProjectIds, sidebarFolderRecents, folderProjects])
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -1082,20 +1097,34 @@ export function SidePanel({
             </button>
             {/* 编辑按钮 — 只在 Recents tab 显示 */}
             {sidebarTab === 'recents' && (
-              <button
-                type="button"
-                onMouseDown={e => e.preventDefault()}
-                onClick={isEditMode ? exitEditMode : enterEditMode}
-                aria-label={isEditMode ? t('common:done') : t('common:edit')}
-                className={`ml-auto p-1 rounded-md transition-colors duration-150 ${
-                  isEditMode
-                    ? 'text-accent-main-100 hover:bg-accent-main-100/10'
-                    : 'text-text-500 hover:text-text-300 hover:bg-bg-200/50'
-                }`}
-                title={isEditMode ? t('common:done') : t('common:edit')}
-              >
-                {isEditMode ? <CheckIcon size={14} /> : <PencilIcon size={14} />}
-              </button>
+              <>
+                {isEditMode && (
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={handleSelectAll}
+                    aria-label={t('sidebar.selectAll')}
+                    className={`ml-auto p-1 rounded-md transition-colors duration-150 text-text-500 hover:text-text-300 hover:bg-bg-200/50`}
+                    title={t('sidebar.selectAll')}
+                  >
+                    <CheckSquareIcon size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={isEditMode ? exitEditMode : enterEditMode}
+                  aria-label={isEditMode ? t('common:done') : t('common:edit')}
+                  className={`p-1 rounded-md transition-colors duration-150 ${
+                    isEditMode
+                      ? 'text-accent-main-100 hover:bg-accent-main-100/10'
+                      : 'text-text-500 hover:text-text-300 hover:bg-bg-200/50'
+                  }`}
+                  title={isEditMode ? t('common:done') : t('common:edit')}
+                >
+                  {isEditMode ? <CheckIcon size={14} /> : <PencilIcon size={14} />}
+                </button>
+              </>
             )}
           </div>
 
