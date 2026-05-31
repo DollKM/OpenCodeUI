@@ -10,6 +10,7 @@ import {
   MinimizeIcon,
   AppWindowIcon,
   LayersIcon,
+  GitDiffIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
@@ -259,6 +260,14 @@ export function Header({
             className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
           >
             <LayersIcon size={18} />
+          </IconButton>
+
+          <IconButton
+            aria-label={t('header.changes')}
+            onClick={() => layoutStore.addChangesTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+          >
+            <GitDiffIcon size={18} />
           </IconButton>
 
           <div className="w-[1px] h-5 bg-border-200/30 mx-1" />
