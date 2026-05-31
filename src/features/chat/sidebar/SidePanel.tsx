@@ -1366,7 +1366,7 @@ export function SidePanel({
 // FlowingDots - 工作中状态点阵流动动画
 // ============================================
 
-const DOT_COUNT = 12
+const DOT_COUNT = 25
 const DOT_SIZE = 5
 
 const FlowingDots = memo(function FlowingDots() {
