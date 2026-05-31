@@ -11,7 +11,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { STORAGE_KEY_NOTIFICATIONS_ENABLED } from '../constants/storage'
-import { isTauri } from '../utils/tauri'
+import { isTauri, getDesktopPlatform } from '../utils/tauri'
 
 // ============================================
 // Types
@@ -61,7 +61,19 @@ async function sendTauriNotification(title: string, body: string): Promise<void>
     }
 
     if (permitted) {
-      sendNotification({ title, body })
+      const platform = getDesktopPlatform()
+      // Windows: 显式设置默认通知声音，确保系统 toast 播放声音
+      // 即使开启了专注助手（Focus Assist）也可能不阻止提醒类声音
+      if (platform === 'windows') {
+        sendNotification({
+          title,
+          body,
+          silent: false,
+          sound: 'ms-winsoundevent:Notification.Default',
+        })
+      } else {
+        sendNotification({ title, body })
+      }
     }
   } catch (e) {
     if (import.meta.env.DEV) {

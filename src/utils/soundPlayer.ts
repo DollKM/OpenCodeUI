@@ -79,6 +79,23 @@ export function isSoundSupported(): boolean {
   )
 }
 
+/**
+ * 预初始化 AudioContext 并尝试激活
+ *
+ * 在应用启动时调用一次，提前创建 AudioContext 并 resume，
+ * 避免浏览器的 autoplay 策略导致第一条通知声音不播放。
+ * 如果此时无法 resume（尚无用户交互），不影响后续，
+ * playBuiltinSound 中仍会再次尝试 await resume()。
+ */
+export function prewarmAudioContext(): void {
+  const ctx = getAudioContext()
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(() => {
+      // fire-and-forget: 后续播放时会再试
+    })
+  }
+}
+
 // ============================================
 // 音量映射：UI 0-100 → 实际增益
 // 50 = 正常基准 (gain=0.35)
@@ -306,13 +323,18 @@ const synthMap: Record<BuiltinSoundId, SynthFn> = {
 // 播放内置音效
 // ============================================
 
-function playBuiltinSound(soundId: BuiltinSoundId, volume: number): void {
+async function playBuiltinSound(soundId: BuiltinSoundId, volume: number): Promise<void> {
   const ctx = getAudioContext()
   if (!ctx) return
 
-  // 恢复挂起的 AudioContext（浏览器 autoplay 策略）
+  // 恢复挂起的 AudioContext（浏览器/Tauri WebView autoplay 策略）
+  // 必须 await，否则后续调度的振荡器节点不会播放
   if (ctx.state === 'suspended') {
-    ctx.resume().catch(() => {})
+    try {
+      await ctx.resume()
+    } catch {
+      return
+    }
   }
 
   const masterGain = ctx.createGain()
@@ -384,6 +406,10 @@ export function playSound(options: PlaySoundOptions): void {
       }
     })
   } else if (soundId.startsWith('builtin:')) {
-    playBuiltinSound(soundId as BuiltinSoundId, volume)
+    playBuiltinSound(soundId as BuiltinSoundId, volume).catch(err => {
+      if (import.meta.env.DEV) {
+        console.warn('[SoundPlayer] Failed to play builtin sound:', err)
+      }
+    })
   }
 }
