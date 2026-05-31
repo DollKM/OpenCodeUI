@@ -75,7 +75,7 @@ interface ProjectItem {
   sectionKind?: 'project' | 'workspace'
 }
 
-type ProjectStatus = 'working' | 'notification'
+type ProjectStatus = 'working'
 
 function getSelectionRange(visibleIds: string[], anchorId: string, targetId: string) {
   const startIndex = visibleIds.indexOf(anchorId)
@@ -488,7 +488,6 @@ export function SidePanel({
   const projectStatusMap = useMemo(() => {
     const map = new Map<string, ProjectStatus>()
 
-    // 1. 先标记有活跃 session 的项目为 'working'
     for (const entry of busySessions) {
       for (const project of selectorProjectGroups) {
         if (matchesProjectDirectory(entry.directory, project)) {
@@ -497,21 +496,8 @@ export function SidePanel({
       }
     }
 
-    // 2. 再标记有未读通知且不在工作中的项目为 'notification'
-    for (const notif of notifications) {
-      if (notif.read || notif.type !== 'completed') continue
-      for (const project of selectorProjectGroups) {
-        if (map.get(project.id) === 'working') continue // 工作中的不覆盖
-        if (matchesProjectDirectory(notif.directory, project)) {
-          if (!map.has(project.id)) {
-            map.set(project.id, 'notification')
-          }
-        }
-      }
-    }
-
     return map
-  }, [busySessions, notifications, selectorProjectGroups])
+  }, [busySessions, selectorProjectGroups])
 
   const currentProject = useMemo<ProjectItem | null>(() => {
     if (!currentDirectory) return null
@@ -996,11 +982,8 @@ export function SidePanel({
                       className="min-w-0 flex flex-1 items-center gap-2 text-left bg-transparent border-none p-0"
                       title={project.worktree}
                     >
-                      <span className="relative w-5 h-5 flex items-center justify-center shrink-0">
+                      <span className="w-5 h-5 flex items-center justify-center shrink-0">
                         <FolderIcon size={14} />
-                        {projectStatus === 'notification' && (
-                          <span className="absolute top-0 -right-0.5 w-[5px] h-[5px] rounded-full bg-accent-main-100" />
-                        )}
                       </span>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="text-left text-[length:var(--fs-sm)]">
