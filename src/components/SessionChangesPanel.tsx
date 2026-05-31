@@ -6,22 +6,27 @@
 
 import { memo, useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon, CheckIcon } from './Icons'
+import { RetryIcon, ChevronRightIcon, ChevronDownIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon, CheckIcon, SendIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
-import { getLastTurnDiff, getSessionDiff, getLastVisibleMessageId } from '../api/session'
+import { getLastTurnDiff, getSessionDiff, getLastVisibleMessageId, createSession } from '../api/session'
 import { getVcsDiff, getVcsInfo } from '../api/vcs'
+import { sendMessageAsync } from '../api/message'
 import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
+import type { ModelInfo } from '../api'
 import { detectLanguage } from '../utils/languageUtils'
-import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
+import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
+import { getModelKey, findModelByKey } from '../utils/modelUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
-import { DropdownMenu } from './ui'
+import { DropdownMenu, IconButton } from './ui'
 import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
 import { turnCheckpointStore } from '../store/turnCheckpointStore'
+import { useModels } from '../hooks/useModels'
+import { useSessionNavigation } from '../contexts/SessionNavigationContext'
 
 // 常量
 const MIN_LIST_HEIGHT = 80
@@ -30,11 +35,11 @@ const MIN_PREVIEW_HEIGHT = 120
 type ChangeMode = ChangeScopeMode
 
 function getDefaultChangeMode(options: ChangeMode[]) {
-  if (options.includes('session')) return 'session'
-  if (options.includes('turn')) return 'turn'
   if (options.includes('git')) return 'git'
   if (options.includes('branch')) return 'branch'
-  return options[0] ?? 'session'
+  if (options.includes('session')) return 'session'
+  if (options.includes('turn')) return 'turn'
+  return options[0] ?? 'git'
 }
 
 function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activeFile: string | null) {
@@ -90,9 +95,32 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const [turnDiffs, setTurnDiffs] = useState<FileDiff[]>([])
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
-  const [listMode, setListMode] = useState<'flat' | 'tree'>('tree')
+  const [listMode, setListMode] = useState<'flat' | 'tree'>('flat')
   const [changeMenuOpen, setChangeMenuOpen] = useState(false)
   const changeMode = useSessionChangeScope(sessionId)
+
+  // 模型选择
+  const { models: allModels, isLoading: modelsLoading } = useModels()
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const modelMenuTriggerRef = useRef<HTMLButtonElement>(null)
+  const modelMenuRef = useRef<HTMLDivElement>(null)
+  const modelMenuId = useId()
+  const { navigateToSession } = useSessionNavigation()
+  const [committing, setCommitting] = useState(false)
+
+  const visibleModels = useMemo(() => allModels, [allModels])
+  const selectedModel = useMemo(
+    () => (selectedModelKey ? findModelByKey(visibleModels, selectedModelKey) : visibleModels[0]),
+    [selectedModelKey, visibleModels],
+  )
+
+  // 初始化默认选择第一个模型
+  useEffect(() => {
+    if (!selectedModelKey && visibleModels.length > 0) {
+      setSelectedModelKey(getModelKey(visibleModels[0]))
+    }
+  }, [visibleModels, selectedModelKey])
 
   // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -368,14 +396,20 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
 
         if (requestId !== diffRequestIdRef.current[mode]) return
 
+        // 用 patch 重新计算增删行数，不依赖 API 值（后端统计口径可能不同）
+        const corrected = data.map(d => ({
+          ...d,
+          ...(d.patch ? computePatchStats(d.patch) : { additions: 0, deletions: 0 }),
+        }))
+
         if (mode === 'git') {
-          setGitDiffs(data)
+          setGitDiffs(corrected)
         } else if (mode === 'branch') {
-          setBranchDiffs(data)
+          setBranchDiffs(corrected)
         } else if (mode === 'session') {
-          setSessionDiffs(data)
+          setSessionDiffs(corrected)
         } else {
-          setTurnDiffs(data)
+          setTurnDiffs(corrected)
         }
 
         setLoadedModes(prev => ({ ...prev, [mode]: true }))
@@ -651,6 +685,101 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            {/* 模型选择 */}
+            <button
+              ref={modelMenuTriggerRef}
+              type="button"
+              onClick={() => setModelMenuOpen(open => !open)}
+              aria-label={t('sessionChanges.selectModel')}
+              aria-haspopup="menu"
+              aria-expanded={modelMenuOpen}
+              aria-controls={modelMenuOpen ? modelMenuId : undefined}
+              title={selectedModel?.name || t('sessionChanges.selectModel')}
+              className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[length:var(--fs-xxs)] transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            >
+              <span className="truncate max-w-[80px]">{selectedModel?.name || 'Model'}</span>
+              <ChevronDownIcon size={10} />
+            </button>
+
+            <DropdownMenu
+              triggerRef={modelMenuTriggerRef}
+              isOpen={modelMenuOpen}
+              position="bottom"
+              align="left"
+              minWidth="140px"
+              maxWidth="min(200px, calc(100vw - 24px))"
+              constrainToRef={containerRef}
+              className="!rounded-lg !p-1"
+            >
+              <div
+                id={modelMenuId}
+                ref={modelMenuRef}
+                role="menu"
+                aria-label={t('sessionChanges.selectModel')}
+                className="space-y-px max-h-[300px] overflow-y-auto"
+              >
+                {visibleModels.map(model => {
+                  const key = getModelKey(model)
+                  const isSelected = key === (selectedModelKey || getModelKey(visibleModels[0]))
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isSelected}
+                      onClick={() => {
+                        setSelectedModelKey(key)
+                        setModelMenuOpen(false)
+                      }}
+                      className={`group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-xs)] transition-colors ${
+                        isSelected
+                          ? 'bg-bg-200/70 text-text-100 font-medium'
+                          : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{model.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </DropdownMenu>
+
+            {/* 批量提交按钮 */}
+            <button
+              type="button"
+              disabled={committing || !selectedModel || diffs.length === 0}
+              onClick={async () => {
+                if (!selectedModel) return
+                setCommitting(true)
+                try {
+                  const parsed = getModelKey(selectedModel)
+                  const newSession = await createSession({
+                    title: '按修改分批提交git',
+                    directory: directory || undefined,
+                  })
+                  await sendMessageAsync({
+                    sessionId: newSession.id,
+                    text: '按修改分批提交git',
+                    attachments: [],
+                    model: {
+                      providerID: selectedModel.providerId,
+                      modelID: selectedModel.id,
+                    },
+                    directory: directory || undefined,
+                  })
+                  navigateToSession(newSession.id, directory)
+                } catch (err) {
+                  sessionErrorHandler('batch commit', err)
+                } finally {
+                  setCommitting(false)
+                }
+              }}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors text-accent-main-100 hover:bg-accent-main-100/10 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={t('sessionChanges.batchCommit')}
+            >
+              <SendIcon size={13} />
+            </button>
+
             <button
               ref={changeMenuTriggerRef}
               type="button"
