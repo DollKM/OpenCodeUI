@@ -190,7 +190,7 @@ fn spawn_opencode_serve(
 /// 尝试执行 resolved 路径的二进制文件，失败时返回带上下文的错误
 fn try_exec(
     resolved: &std::path::Path,
-    original_name: &str,
+    _original_name: &str,
     env_vars: &std::collections::HashMap<String, String>,
 ) -> Result<std::process::Child, String> {
     let path_str = resolved.to_string_lossy().to_string();
