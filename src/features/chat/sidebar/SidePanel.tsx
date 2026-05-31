@@ -104,6 +104,16 @@ function findProjectGroupForDirectory(projects: ProjectItem[], directory: string
   })
 }
 
+type ProjectStatus = 'working' | 'notification'
+
+function matchesProjectDirectory(directory: string | undefined, project: ProjectItem): boolean {
+  if (!directory) return false
+  if (isSameDirectory(project.worktree, directory)) return true
+  if (project.workspaceDirectories?.some(wd => isSameDirectory(wd, directory))) return true
+  if (project.memberDirectories?.some(md => isSameDirectory(md, directory))) return true
+  return false
+}
+
 export function SidePanel({
   onNewSession,
   onSelectSession,
@@ -270,6 +280,35 @@ export function SidePanel({
   const notifications = useNotifications()
   const unreadNotificationCount = useUnreadNotificationCount()
   const attentionCount = busyCount + unreadNotificationCount
+
+  // 计算下拉列表中每个项目的状态（工作中 / 未读通知 / 无）
+  const projectStatusMap = useMemo(() => {
+    const map = new Map<string, ProjectStatus>()
+
+    // 1. 标记有活跃 session 的项目为 'working'
+    for (const entry of busySessions) {
+      for (const project of selectorProjectGroups) {
+        if (matchesProjectDirectory(entry.directory, project)) {
+          map.set(project.id, 'working')
+        }
+      }
+    }
+
+    // 2. 标记有未读通知且不在工作中的项目为 'notification'
+    for (const notif of notifications) {
+      if (notif.read || notif.type !== 'completed') continue
+      for (const project of selectorProjectGroups) {
+        if (map.get(project.id) === 'working') continue
+        if (matchesProjectDirectory(notif.directory, project)) {
+          if (!map.has(project.id)) {
+            map.set(project.id, 'notification')
+          }
+        }
+      }
+    }
+
+    return map
+  }, [busySessions, notifications, selectorProjectGroups])
 
   useEffect(() => {
     return subscribeToConnectionState(setConnectionState)
