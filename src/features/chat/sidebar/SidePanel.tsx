@@ -12,7 +12,6 @@ import { getParentPath } from './sidebarUtils'
 import {
   SidebarIcon,
   FolderIcon,
-  GlobeIcon,
   PlusIcon,
   TrashIcon,
   SearchIcon,
@@ -472,21 +471,12 @@ export function SidePanel({
     return buildProjectGroups(sortedDirectories)
   }, [buildProjectGroups, savedDirectories])
 
-  const globalProject = useMemo<ProjectItem>(
-    () => ({
-      id: 'global',
-      worktree: t('sidebar.allProjects'),
-      name: t('sidebar.global'),
-    }),
-    [t],
-  )
-
   const projects = useMemo<ProjectItem[]>(() => {
-    return [globalProject, ...selectorProjectGroups]
-  }, [globalProject, selectorProjectGroups])
+    return selectorProjectGroups
+  }, [selectorProjectGroups])
 
-  const currentProject = useMemo<ProjectItem>(() => {
-    if (!currentDirectory) return globalProject
+  const currentProject = useMemo<ProjectItem | null>(() => {
+    if (!currentDirectory) return null
 
     const groupedProject = findProjectGroupForDirectory(folderProjectGroups, normalizedCurrentDirectory!)
     if (groupedProject) return groupedProject
@@ -504,19 +494,20 @@ export function SidePanel({
       memberDirectories: [],
       workspaceDirectories,
     }
-  }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, globalProject, normalizedCurrentDirectory])
+  }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, normalizedCurrentDirectory])
 
   const currentProjectLabel = useMemo(() => {
-    const baseLabel = currentProject?.name || t('sidebar.global')
-    if (!currentDirectory || currentProject?.id === 'global') return baseLabel
+    if (!currentProject) return t('sidebar.selectProject') || '选择项目...'
+
+    const baseLabel = currentProject.name || getDirectoryName(currentProject.worktree)
+    if (!currentDirectory) return baseLabel
 
     const branchLabel = currentDirectoryVcsInfo?.branch ?? (isCurrentDirectoryVcsLoading ? '...' : undefined)
     return branchLabel ? `${baseLabel} · ${branchLabel}` : baseLabel
   }, [
+    currentProject,
     currentDirectory,
     currentDirectoryVcsInfo?.branch,
-    currentProject?.id,
-    currentProject?.name,
     isCurrentDirectoryVcsLoading,
     t,
   ])
@@ -524,7 +515,7 @@ export function SidePanel({
   const folderProjects = useMemo<ProjectItem[]>(() => {
     const list = [...folderProjectGroups]
 
-    if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
+    if (currentDirectory && currentProject && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
       list.push({ ...currentProject, canReorder: false })
     }
 
@@ -556,11 +547,11 @@ export function SidePanel({
   }, [folderProjects])
 
   const currentProjectWorkspaceDirectories = useMemo(
-    () => currentProject.workspaceDirectories ?? [],
-    [currentProject.workspaceDirectories],
+    () => currentProject?.workspaceDirectories ?? [],
+    [currentProject?.workspaceDirectories],
   )
   const shouldRenderWorkspaceTreeOnly =
-    !search && currentProjectWorkspaceDirectories.length > 1 && currentProject.id !== 'global'
+    !search && currentProject != null && currentProjectWorkspaceDirectories.length > 1
   const shouldWaitForWorkspaceResolution =
     !sidebarFolderRecents &&
     !search &&
@@ -571,7 +562,7 @@ export function SidePanel({
     !gitWorkspaceCatalog.has(normalizedCurrentDirectory)
 
   const currentProjectTreeProjects = useMemo<ProjectItem[]>(() => {
-    if (!shouldRenderWorkspaceTreeOnly || currentProject.id === 'global') return []
+    if (!shouldRenderWorkspaceTreeOnly || currentProject == null) return []
 
     const draggableWorkspaceSet = new Set(
       (currentProject.memberDirectories ?? []).map(directory => normalizeToForwardSlash(directory)),
@@ -614,12 +605,8 @@ export function SidePanel({
 
   const handleSelectProject = useCallback(
     (projectId: string) => {
-      if (projectId === 'global') {
-        setCurrentDirectory(undefined)
-      } else {
-        setCurrentDirectory(projectId)
-        pendingAutoSelectRef.current = true
-      }
+      setCurrentDirectory(projectId)
+      pendingAutoSelectRef.current = true
     },
     [setCurrentDirectory],
   )
@@ -645,7 +632,7 @@ export function SidePanel({
 
   const handleSelect = useCallback(
     (session: ApiSession) => {
-      // Global 模式下，点击 session 自动切换到该 session 的工作目录并添加到项目列表
+      // 无当前目录时，点击 session 自动切换到该 session 的工作目录并添加到项目列表
       if (!currentDirectory && session.directory) {
         addDirectory(session.directory)
       }
@@ -905,11 +892,7 @@ export function SidePanel({
             title={currentProjectLabel}
           >
             <span className="size-5 flex items-center justify-center shrink-0">
-              {currentProject?.id === 'global' ? (
-                <GlobeIcon size={16} className="text-accent-main-100" />
-              ) : (
-                <FolderIcon size={16} />
-              )}
+              <FolderIcon size={16} className={currentProject ? '' : 'text-text-400'} />
             </span>
             <div className="ml-2 min-w-0 flex-1 text-left text-[length:var(--fs-base)]">
               <div
@@ -945,12 +928,11 @@ export function SidePanel({
           <div className="rounded-lg border border-border-200/60 glass-alt shadow-sm overflow-hidden">
             <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
               {projects.map(project => {
-                const isGlobal = project.id === 'global'
                 const isActive = currentProject?.id === project.id
                 const itemLabel =
-                  isActive && !isGlobal
+                  isActive
                     ? currentProjectLabel
-                    : project.name || (isGlobal ? t('sidebar.global') : project.worktree)
+                    : project.name || project.worktree
                 return (
                   <div
                     key={project.id}
@@ -970,7 +952,7 @@ export function SidePanel({
                       title={project.worktree}
                     >
                       <span className="w-5 h-5 flex items-center justify-center shrink-0">
-                        {isGlobal ? <GlobeIcon size={14} className="text-accent-main-100" /> : <FolderIcon size={14} />}
+                        <FolderIcon size={14} />
                       </span>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="text-left text-[length:var(--fs-sm)]">
@@ -984,25 +966,23 @@ export function SidePanel({
                             {itemLabel}
                           </div>
                         </div>
-                        <div className={`text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 ${isGlobal ? '' : 'font-mono'}`}>
-                          {isGlobal ? t('sidebar.globalProjectHint') : project.worktree ? getParentPath(project.worktree) : ''}
+                        <div className="text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 font-mono">
+                          {project.worktree ? getParentPath(project.worktree) : ''}
                         </div>
                       </div>
                     </button>
-                    {!isGlobal && (
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setProjectDeleteConfirm({ isOpen: true, projectId: project.id })
-                        }}
-                        aria-label={t('sidebar.removeProject')}
-                        className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all"
-                        title={t('common:remove')}
-                      >
-                        <TrashIcon size={12} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        setProjectDeleteConfirm({ isOpen: true, projectId: project.id })
+                      }}
+                      aria-label={t('sidebar.removeProject')}
+                      className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all"
+                      title={t('common:remove')}
+                    >
+                      <TrashIcon size={12} />
+                    </button>
                   </div>
                 )
               })}
