@@ -466,10 +466,19 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     void loadProjectState()
   }, [directory, sessionId, loadProjectState, resetSplitHeight])
 
+  // 初始化变更类型：store 默认是 'session'，但优先取 preferredChangeMode（git）
+  const changeModeInitializedRef = useRef(false)
   useEffect(() => {
     if (changeOptions.length === 0) return
-    if (changeOptions.includes(changeMode)) return
-    setChangeMode(preferredChangeMode)
+    if (changeModeInitializedRef.current) {
+      if (changeOptions.includes(changeMode)) return
+      setChangeMode(preferredChangeMode)
+      return
+    }
+    changeModeInitializedRef.current = true
+    if (!changeOptions.includes(changeMode) || changeMode === 'session') {
+      setChangeMode(preferredChangeMode)
+    }
   }, [changeMode, changeOptions, preferredChangeMode, setChangeMode])
 
   useEffect(() => {
