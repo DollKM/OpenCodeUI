@@ -23,6 +23,7 @@ import {
 import { soundStore, useSoundSettings } from '../../../store/soundStore'
 import { Toggle, SettingRow, SettingsCard } from './SettingsUI'
 import { BUILTIN_SOUNDS, SOUND_OPTIONS, isSoundSupported, playSound } from '../../../utils/soundPlayer'
+import { playNotificationSound } from '../../../utils/notificationSoundBridge'
 import type { NotificationType } from '../../../store/notificationStore'
 
 // ============================================
@@ -362,6 +363,7 @@ export function NotificationSettings() {
 
   const handleTestNotification = () => {
     sendNotification(t('notifications.testTitle'), t('notifications.testBody'))
+    playNotificationSound('completed')
   }
 
   const handleToastToggle = () => {
