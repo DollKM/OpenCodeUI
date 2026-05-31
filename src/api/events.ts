@@ -765,6 +765,9 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
     case EventTypes.SERVER_CONNECTED:
       callbacks.onServerConnected?.(normalizeServerConnected(payload.properties))
       break
+    case EventTypes.MCP_TOOLS_CHANGED:
+      callbacks.onMcpToolsChanged?.(payload.properties.server)
+      break
     default:
       // 忽略其他事件类型
       break

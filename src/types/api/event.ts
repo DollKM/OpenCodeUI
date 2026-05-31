@@ -174,5 +174,6 @@ export interface EventCallbacks {
   onWorktreeFailed?: (data: WorktreeFailedPayload) => void
   onVcsBranchUpdated?: (data: VcsBranchUpdatedPayload) => void
   onError?: (error: Error) => void
+  onMcpToolsChanged?: (server: string) => void
   onReconnected?: (reason: 'network' | 'server-switch') => void
 }

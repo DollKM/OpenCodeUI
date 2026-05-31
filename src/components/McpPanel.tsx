@@ -20,14 +20,16 @@ import {
   ChevronDownIcon,
 } from './Icons'
 import {
-  getMcpStatus,
+  healthCheckMcpStatus,
   connectMcpServer,
   disconnectMcpServer,
   startMcpAuth,
   authenticateMcp,
   addMcpServer,
+  recordMcpServerName,
 } from '../api/mcp'
 import type { MCPStatus, McpServerConfig } from '../types/api/mcp'
+import { subscribeToEvents } from '../api/events'
 import { useDirectory } from '../hooks'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
@@ -62,7 +64,7 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
   const loadStatus = useCallback(async () => {
     try {
       setError(null)
-      const statusResponse = await getMcpStatus(currentDirectory)
+      const statusResponse = await healthCheckMcpStatus(currentDirectory)
       logger.log('[McpPanel] Status:', statusResponse)
 
       // 构建 server entries
@@ -85,6 +87,17 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
   // 初始加载
   useEffect(() => {
     loadStatus()
+  }, [loadStatus])
+
+  // 订阅 MCP 状态变更事件，后端状态变化时自动刷新
+  useEffect(() => {
+    const unsubscribe = subscribeToEvents({
+      onMcpToolsChanged: (server) => {
+        recordMcpServerName(server)
+        loadStatus()
+      },
+    })
+    return unsubscribe
   }, [loadStatus])
 
   // 刷新
