@@ -18,7 +18,7 @@ import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
 import type { ModelInfo } from '../api'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
-import { getModelKey, findModelByKey } from '../utils/modelUtils'
+import { getModelKey, findModelByKey, getSessionModelSelection, saveSessionModelSelection } from '../utils/modelUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
@@ -115,12 +115,26 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     [selectedModelKey, visibleModels],
   )
 
-  // 初始化默认选择第一个模型
+  // 初始化默认选择（优先恢复 session 上次保存的模型，兜底取第一个）
   useEffect(() => {
-    if (!selectedModelKey && visibleModels.length > 0) {
+    if (selectedModelKey || visibleModels.length === 0) return
+    const saved = getSessionModelSelection(sessionId)
+    if (saved && findModelByKey(visibleModels, saved.modelKey)) {
+      setSelectedModelKey(saved.modelKey)
+    } else {
       setSelectedModelKey(getModelKey(visibleModels[0]))
     }
-  }, [visibleModels, selectedModelKey])
+  }, [visibleModels, selectedModelKey, sessionId])
+
+  // 用户切换模型时持久化
+  const handleModelSelect = useCallback(
+    (key: string) => {
+      setSelectedModelKey(key)
+      saveSessionModelSelection(sessionId, key, undefined)
+      setModelMenuOpen(false)
+    },
+    [sessionId],
+  )
 
   // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
@@ -727,10 +741,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                       type="button"
                       role="menuitemradio"
                       aria-checked={isSelected}
-                      onClick={() => {
-                        setSelectedModelKey(key)
-                        setModelMenuOpen(false)
-                      }}
+                      onClick={() => handleModelSelect(key)}
                       className={`group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-xs)] transition-colors ${
                         isSelected
                           ? 'bg-bg-200/70 text-text-100 font-medium'
