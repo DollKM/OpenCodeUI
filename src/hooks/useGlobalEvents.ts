@@ -172,9 +172,18 @@ async function fetchActiveScopeData(directories?: string[]) {
   const results = await Promise.all(
     scopes.map(async directory => {
       const [statusMap, permissions, questions] = await Promise.all([
-        getSessionStatus(directory).catch(() => ({}) as SessionStatusMap),
-        getPendingPermissions(undefined, directory).catch(() => []),
-        getPendingQuestions(undefined, directory).catch(() => []),
+        getSessionStatus(directory).catch(e => {
+          console.error('[fetchActiveScopeData] getSessionStatus error:', e)
+          return {} as SessionStatusMap
+        }),
+        getPendingPermissions(undefined, directory).catch(e => {
+          console.error('[fetchActiveScopeData] getPendingPermissions error:', e)
+          return []
+        }),
+        getPendingQuestions(undefined, directory).catch(e => {
+          console.error('[fetchActiveScopeData] getPendingQuestions error:', e)
+          return []
+        }),
       ])
 
       return { directory, statusMap, permissions, questions }
