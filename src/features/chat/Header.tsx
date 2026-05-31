@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
@@ -8,6 +8,8 @@ import {
   SplitHorizontalIcon,
   MaximizeIcon,
   MinimizeIcon,
+  AppWindowIcon,
+  LayersIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
@@ -19,6 +21,7 @@ import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport } from './chatViewport'
+import { isTauri } from '../../utils/tauri'
 import type { ModelInfo } from '../../api'
 
 interface HeaderProps {
@@ -128,6 +131,20 @@ export function Header({
   const { currentDirectory } = useDirectory()
   const { presentation, interaction } = useChatViewport()
 
+  const directory = sessionDirectory || currentDirectory
+
+  const handleOpenInVSCode = useCallback(() => {
+    if (!directory) return
+    const vscodeUri = `vscode://file/${directory}`
+    if (isTauri()) {
+      import('@tauri-apps/plugin-opener')
+        .then(mod => mod.openUrl(vscodeUri))
+        .catch(() => window.open(vscodeUri))
+    } else {
+      window.open(vscodeUri)
+    }
+  }, [directory])
+
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState('')
@@ -225,6 +242,27 @@ export function Header({
 
       <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
         <div className="flex items-center gap-0.5">
+          {directory && (
+            <IconButton
+              aria-label={t('header.openInVSCode')}
+              onClick={handleOpenInVSCode}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.openInVSCode')}
+            >
+              <AppWindowIcon size={18} />
+            </IconButton>
+          )}
+
+          <IconButton
+            aria-label={t('header.integrations')}
+            onClick={() => layoutStore.addIntegrationsTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+          >
+            <LayersIcon size={18} />
+          </IconButton>
+
+          <div className="w-[1px] h-5 bg-border-200/30 mx-1" />
+
           {onTogglePaneFullscreen && (
             <IconButton
               aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}

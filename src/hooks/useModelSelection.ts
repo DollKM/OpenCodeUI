@@ -115,8 +115,11 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
       return
     }
 
-    serverStorage.remove(STORAGE_KEY_SELECTED_MODEL)
-  }, [resolvedModelKey, resolvedSelectedVariant, sessionId, sessionSelection])
+    // Don't clear stored model preference when models haven't loaded yet
+    if (models.length > 0) {
+      serverStorage.remove(STORAGE_KEY_SELECTED_MODEL)
+    }
+  }, [resolvedModelKey, resolvedSelectedVariant, sessionId, sessionSelection, models.length])
 
   // 切换模型
   const handleModelChange = useCallback(
