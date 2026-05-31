@@ -15,16 +15,13 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
 import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
-import { useUpdateStore, hasUpdateAvailable } from '../store/updateStore'
+
 
 /* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
 const TB_BTN =
   'inline-flex h-full w-8 items-center justify-center text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
 const TB_BTN_MAC =
   'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
-const TB_BTN_MAC_UPDATE =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
-
 const WindowsControlsHost = memo(function WindowsControlsHost() {
   return (
     <div
@@ -38,8 +35,6 @@ const WindowsControlsHost = memo(function WindowsControlsHost() {
 export function DesktopTitlebar() {
   const { t } = useTranslation('components')
   const { mode, resolvedTheme } = useTheme()
-  const updateState = useUpdateStore()
-  const hasUpdate = hasUpdateAvailable(updateState)
   const platform = useMemo(() => getDesktopPlatform(), [])
   const isDesktopChrome = useMemo(() => usesCustomDesktopTitlebar(), [])
   const titlebarButtonClass = platform === 'macos' ? TB_BTN_MAC : TB_BTN
@@ -151,15 +146,9 @@ export function DesktopTitlebar() {
         <button
           type="button"
           onClick={handleOpenSettings}
-          className={
-            hasUpdate
-              ? platform === 'macos'
-                ? TB_BTN_MAC_UPDATE
-                : 'inline-flex h-full w-8 items-center justify-center text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
-              : titlebarButtonClass
-          }
-          title={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
-          aria-label={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
+          className={titlebarButtonClass}
+          title={t('desktopTitlebar.openSettings')}
+          aria-label={t('desktopTitlebar.openSettings')}
         >
           <SettingsIcon size={14} />
         </button>
