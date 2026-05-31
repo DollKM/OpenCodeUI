@@ -108,11 +108,14 @@ export async function healthCheckMcpStatus(directory?: string): Promise<MCPStatu
   // 先试官方 status API
   try {
     const status = await getMcpStatus(directory)
-    // 把服务器名同步到本地注册表
-    for (const name of Object.keys(status)) {
-      addKnownServer(name)
+    if (Object.keys(status).length > 0) {
+      // 把服务器名同步到本地注册表
+      for (const name of Object.keys(status)) {
+        addKnownServer(name)
+      }
+      return status
     }
-    return status
+    // status API 返回空，继续走 fallback
   } catch {
     // status API 不可用，用替代方案
   }
