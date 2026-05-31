@@ -18,6 +18,7 @@ import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
+import { notificationStore } from './store/notificationStore'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
 // 统一补齐，避免业务层 scattered fallback。
@@ -100,24 +101,44 @@ if (isNativeTauri) {
   if (!isNativeTauriMobile && serviceStore.autoStart) {
     const serverUrl = serverStore.getActiveServer()?.url || 'http://127.0.0.1:4096'
     const binaryPath = serviceStore.effectiveBinaryPath
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      serviceStore.setStarting(true)
-      invoke<boolean>('start_opencode_service', { url: serverUrl, binaryPath, envVars: serviceStore.envVarsRecord })
-        .then(weStarted => {
-          serviceStore.setStartedByUs(weStarted)
-          serviceStore.setRunning(true)
-          serviceStore.setStarting(false)
-          if (weStarted) {
-            console.info('[Service] opencode serve started by app')
-          } else {
-            console.info('[Service] opencode serve already running')
-          }
+    const doStart = () => {
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => {
+          serviceStore.setStarting(true)
+          invoke<boolean>('start_opencode_service', { url: serverUrl, binaryPath, envVars: serviceStore.envVarsRecord })
+            .then(weStarted => {
+              serviceStore.setStartedByUs(weStarted)
+              serviceStore.setRunning(true)
+              serviceStore.setStarting(false)
+              if (weStarted) {
+                console.info('[Service] opencode serve started by app')
+              } else {
+                console.info('[Service] opencode serve already running')
+              }
+            })
+            .catch(err => {
+              serviceStore.setStarting(false)
+              console.error('[Service] Failed to auto-start opencode serve:', err)
+              notificationStore.push(
+                'error',
+                'Service',
+                `Auto-start failed: ${String(err).slice(0, 120)}`,
+                '',
+              )
+            })
         })
         .catch(err => {
-          serviceStore.setStarting(false)
-          apiErrorHandler('auto-start opencode serve', err)
+          console.error('[Service] Failed to load Tauri API for auto-start:', err)
+          notificationStore.push(
+            'error',
+            'Service',
+            `Auto-start failed (API import error): ${String(err).slice(0, 120)}`,
+            '',
+          )
         })
-    })
+    }
+    // 延迟执行，等 Tauri IPC 就绪
+    setTimeout(doStart, 500)
   }
 }
 

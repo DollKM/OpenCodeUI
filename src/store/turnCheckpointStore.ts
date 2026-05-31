@@ -12,8 +12,6 @@ class TurnCheckpointStore {
   private storageKey = 'opencode-turn-checkpoints'
   private subscribers = new Set<Subscriber>()
   private cache = new Map<string, TurnCheckpoint>()
-  private unlistenStorage: (() => void) | null = null
-
   constructor() {
     this.load()
     this.listenStorage()
@@ -53,7 +51,6 @@ class TurnCheckpointStore {
   private listenStorage() {
     try {
       window.addEventListener('storage', this.handleStorageEvent)
-      this.unlistenStorage = () => window.removeEventListener('storage', this.handleStorageEvent)
     } catch {
       // SSR / test environments without window
     }

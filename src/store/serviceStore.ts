@@ -48,9 +48,11 @@ class ServiceStore {
 
   constructor() {
     try {
-      this._autoStart = localStorage.getItem(STORAGE_KEY_AUTO_START) === 'true'
+      const stored = localStorage.getItem(STORAGE_KEY_AUTO_START)
+      // 首次启动（无存储值）时默认开启自动启动
+      this._autoStart = stored === null ? true : stored === 'true'
     } catch {
-      this._autoStart = false
+      this._autoStart = true
     }
     try {
       this._binaryPath = localStorage.getItem(STORAGE_KEY_BINARY_PATH) || ''
