@@ -16,7 +16,9 @@ import {
   PlugIcon,
   TeachIcon,
   GitWorktreeIcon,
+  LayersIcon,
 } from './Icons'
+
 import { layoutStore, useLayoutStore, type PanelTab, type PanelPosition, type PanelTabType } from '../store/layoutStore'
 import { updatePtySession } from '../api/pty'
 import { useTheme } from '../hooks'
@@ -42,6 +44,7 @@ const TAB_ICONS: Record<PanelTabType, React.ReactNode> = {
   mcp: <PlugIcon size={12} />,
   skill: <TeachIcon size={12} />,
   worktree: <GitWorktreeIcon size={12} />,
+  integrations: <LayersIcon size={12} />,
 }
 
 // Tab 显示名称
@@ -68,6 +71,8 @@ function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string
       return t('panelContainer.skills')
     case 'worktree':
       return t('panelContainer.worktrees')
+    case 'integrations':
+      return t('panelContainer.integrations')
     default:
       return t('panelContainer.tab')
   }
@@ -464,6 +469,18 @@ export const PanelContainer = memo(function PanelContainer({
                 <TeachIcon size={12} />
               </span>
               {t('panelContainer.skills')}
+            </button>
+            <button
+              onClick={() => {
+                layoutStore.addIntegrationsTab(position)
+                setAddMenuPos(null)
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+            >
+              <span className="opacity-60 shrink-0">
+                <LayersIcon size={12} />
+              </span>
+              {t('panelContainer.integrations')}
             </button>
             <button
               onClick={() => {
