@@ -136,11 +136,14 @@ export function Header({
 
   const handleOpenInVSCode = useCallback(() => {
     if (!directory) return
-    const vscodeUri = `vscode://file/${directory}`
-    if (isTauri()) {
+    const vscodeUri = `vscode://file/${directory.replace(/\\/g, '/')}`
+    const openWithOpener = () => {
       import('@tauri-apps/plugin-opener')
         .then(mod => mod.openUrl(vscodeUri))
         .catch(() => window.open(vscodeUri))
+    }
+    if (isTauri()) {
+      openWithOpener()
     } else {
       window.open(vscodeUri)
     }
