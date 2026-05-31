@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../../sessions'
 import { FolderRecentList } from './FolderRecentList'
@@ -102,16 +102,6 @@ function findProjectGroupForDirectory(projects: ProjectItem[], directory: string
 
     return false
   })
-}
-
-type ProjectStatus = 'working' | 'notification'
-
-function matchesProjectDirectory(directory: string | undefined, project: ProjectItem): boolean {
-  if (!directory) return false
-  if (isSameDirectory(project.worktree, directory)) return true
-  if (project.workspaceDirectories?.some(wd => isSameDirectory(wd, directory))) return true
-  if (project.memberDirectories?.some(md => isSameDirectory(md, directory))) return true
-  return false
 }
 
 export function SidePanel({
@@ -280,35 +270,6 @@ export function SidePanel({
   const notifications = useNotifications()
   const unreadNotificationCount = useUnreadNotificationCount()
   const attentionCount = busyCount + unreadNotificationCount
-
-  // 计算下拉列表中每个项目的状态（工作中 / 未读通知 / 无）
-  const projectStatusMap = useMemo(() => {
-    const map = new Map<string, ProjectStatus>()
-
-    // 1. 标记有活跃 session 的项目为 'working'
-    for (const entry of busySessions) {
-      for (const project of selectorProjectGroups) {
-        if (matchesProjectDirectory(entry.directory, project)) {
-          map.set(project.id, 'working')
-        }
-      }
-    }
-
-    // 2. 标记有未读通知且不在工作中的项目为 'notification'
-    for (const notif of notifications) {
-      if (notif.read || notif.type !== 'completed') continue
-      for (const project of selectorProjectGroups) {
-        if (map.get(project.id) === 'working') continue
-        if (matchesProjectDirectory(notif.directory, project)) {
-          if (!map.has(project.id)) {
-            map.set(project.id, 'notification')
-          }
-        }
-      }
-    }
-
-    return map
-  }, [busySessions, notifications, selectorProjectGroups])
 
   useEffect(() => {
     return subscribeToConnectionState(setConnectionState)
@@ -852,6 +813,12 @@ export function SidePanel({
   // 统一的结构，通过 CSS 控制显示/隐藏
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      <style>{`
+        @keyframes dot-flow {
+          0%, 100% { opacity: 0.15; transform: scale(0.5); }
+          50% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
       {/* ===== Header ===== */}
       <div className="h-14 shrink-0 flex items-center">
         {/* Logo 区域 - 展开时显示 */}
@@ -968,6 +935,7 @@ export function SidePanel({
             <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
               {projects.map(project => {
                 const isActive = currentProject?.id === project.id
+                const projectStatus = projectStatusMap.get(project.id)
                 const itemLabel =
                   isActive
                     ? currentProjectLabel
@@ -990,8 +958,11 @@ export function SidePanel({
                       className="min-w-0 flex flex-1 items-center gap-2 text-left bg-transparent border-none p-0"
                       title={project.worktree}
                     >
-                      <span className="w-5 h-5 flex items-center justify-center shrink-0">
+                      <span className="relative w-5 h-5 flex items-center justify-center shrink-0">
                         <FolderIcon size={14} />
+                        {projectStatus === 'notification' && (
+                          <span className="absolute top-0 -right-0.5 w-[5px] h-[5px] rounded-full bg-accent-main-100" />
+                        )}
                       </span>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="text-left text-[length:var(--fs-sm)]">
@@ -1005,8 +976,11 @@ export function SidePanel({
                             {itemLabel}
                           </div>
                         </div>
-                        <div className="text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 font-mono">
-                          {project.worktree ? getParentPath(project.worktree) : ''}
+                        <div className="flex items-center gap-1 text-[length:var(--fs-xxs)] text-text-400 truncate font-mono">
+                          <span className="truncate opacity-70">
+                            {project.worktree ? getParentPath(project.worktree) : ''}
+                          </span>
+                          {projectStatus === 'working' && <FlowingDots />}
                         </div>
                       </div>
                     </button>
@@ -1347,3 +1321,29 @@ export function SidePanel({
     </div>
   )
 }
+
+// ============================================
+// FlowingDots - 工作中状态点阵流动动画
+// ============================================
+
+const DOT_COUNT = 12
+const DOT_SIZE = 5
+
+const FlowingDots = memo(function FlowingDots() {
+  return (
+    <div className="flex items-center h-3 gap-[3px] ml-1">
+      {Array.from({ length: DOT_COUNT }, (_, i) => (
+        <span
+          key={i}
+          className="rounded-full bg-accent-main-100"
+          style={{
+            width: DOT_SIZE,
+            height: DOT_SIZE,
+            animation: 'dot-flow 1.2s ease-in-out infinite',
+            animationDelay: `${i * 0.1}s`,
+          }}
+        />
+      ))}
+    </div>
+  )
+})
