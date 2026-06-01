@@ -10,7 +10,6 @@ import {
 import { childSessionStore } from '../store/childSessionStore'
 import { followupQueueStore } from '../store/followupQueueStore'
 import { todoStore } from '../store/todoStore'
-import { turnCheckpointStore } from '../store/turnCheckpointStore'
 import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
@@ -230,8 +229,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       childSessionStore.clearChildren(id)
       // 清理该 session 的排队消息
       followupQueueStore.clearSession(id)
-      // 清理该 session 的 turn checkpoint
-      turnCheckpointStore.clearCheckpoint(id)
       setSessions(prev => prev.filter(s => s.id !== id))
     },
     [currentDirectory],
