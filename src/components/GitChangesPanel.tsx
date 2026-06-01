@@ -94,9 +94,18 @@ export const GitChangesPanel = memo(function GitChangesPanel({
     [selectedModelKey, visibleModels],
   )
 
+  // 追踪 directory 变化以重置模型选择
+  const prevDirectoryRef = useRef<string | undefined>(directory)
+
   // 初始化默认模型（按目录保存偏好）
   useEffect(() => {
-    if (selectedModelKey || visibleModels.length === 0) return
+    if (visibleModels.length === 0) return
+
+    const directoryChanged = prevDirectoryRef.current !== directory
+    prevDirectoryRef.current = directory
+
+    if (!directoryChanged && selectedModelKey) return
+
     const storageKey = DIRECTORY_MODEL_KEY_PREFIX + (directory ?? 'default')
     const saved = getSessionModelSelection(storageKey)
     if (saved && findModelByKey(visibleModels, saved.modelKey)) {
