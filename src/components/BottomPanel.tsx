@@ -11,8 +11,8 @@ import { normalizeToForwardSlash, uiErrorHandler } from '../utils'
 import { useChatViewport } from '../features/chat/chatViewport'
 
 const Terminal = lazy(() => import('./Terminal').then(module => ({ default: module.Terminal })))
-const SessionChangesPanel = lazy(() =>
-  import('./SessionChangesPanel').then(module => ({ default: module.SessionChangesPanel })),
+const GitChangesPanel = lazy(() =>
+  import('./GitChangesPanel').then(module => ({ default: module.GitChangesPanel })),
 )
 const FileExplorer = lazy(() => import('./FileExplorer').then(module => ({ default: module.FileExplorer })))
 const McpPanel = lazy(() => import('./McpPanel').then(module => ({ default: module.McpPanel })))
@@ -168,22 +168,15 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
             </Suspense>
           </div>
 
-          {sessionId ? (
-            <div className={activeTab.type === 'changes' ? 'h-full' : 'hidden'}>
-              <Suspense fallback={<PanelFallback />}>
-                <ChangesContent
-                  activeTab={activeTab}
-                  directory={directory}
-                  sessionId={sessionId}
-                  isPanelResizing={isPanelResizing}
-                />
-              </Suspense>
-            </div>
-          ) : activeTab.type === 'changes' ? (
-            <div className="flex items-center justify-center h-full text-text-400 text-[length:var(--fs-sm)]">
-              {t('rightPanel.noActiveSession')}
-            </div>
-          ) : null}
+          <div className={activeTab.type === 'changes' ? 'h-full' : 'hidden'}>
+            <Suspense fallback={<PanelFallback />}>
+              <ChangesContent
+                activeTab={activeTab}
+                directory={directory}
+                isPanelResizing={isPanelResizing}
+              />
+            </Suspense>
+          </div>
 
           {activeTab.type === 'terminal' ? (
             <Suspense fallback={<PanelFallback />}>
@@ -299,14 +292,12 @@ const FilesContent = memo(function FilesContent({
 interface ChangesContentProps {
   activeTab: PanelTab
   directory?: string
-  sessionId: string
   isPanelResizing?: boolean
 }
 
 const ChangesContent = memo(function ChangesContent({
   activeTab,
   directory,
-  sessionId,
   isPanelResizing = false,
 }: ChangesContentProps) {
   const { panelTabs } = useLayoutStore()
@@ -316,7 +307,7 @@ const ChangesContent = memo(function ChangesContent({
     <>
       {changeTabs.map(tab => (
         <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
-          <SessionChangesPanel sessionId={sessionId} directory={directory} isResizing={isPanelResizing} />
+          <GitChangesPanel directory={directory} isResizing={isPanelResizing} />
         </div>
       ))}
     </>

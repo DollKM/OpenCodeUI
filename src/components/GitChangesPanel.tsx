@@ -1,20 +1,21 @@
 // ============================================
-// SessionChangesPanel - 会话变更查看器
+// GitChangesPanel - Git 变更查看器（仅 git diff）
 // 布局：上方文件列表 + 下方 Diff 预览（类似 FileExplorer）
 // 支持拖拽调整高度，CSS 变量 + requestAnimationFrame 优化
+// 不依赖 sessionId，没有活跃会话也能显示变更内容
 // ============================================
 
 import { memo, useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RetryIcon, ChevronRightIcon, ChevronDownIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon, CheckIcon, SendIcon } from './Icons'
+import { RetryIcon, ChevronRightIcon, MaximizeIcon, SendIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
-import { getLastTurnDiff, getSessionDiff, getLastVisibleMessageId, createSession } from '../api/session'
-import { getVcsDiff, getVcsInfo } from '../api/vcs'
+import { createSession } from '../api/session'
+import { getVcsDiff } from '../api/vcs'
 import { sendMessageAsync } from '../api/message'
-import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
+import type { ApiProject, FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
 import { getModelKey, findModelByKey, getSessionModelSelection, saveSessionModelSelection } from '../utils/modelUtils'
@@ -22,24 +23,12 @@ import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { DropdownMenu } from './ui'
-import { changeScopeStore, useSessionChangeScope, type ChangeScopeMode } from '../store/changeScopeStore'
-import { turnCheckpointStore } from '../store/turnCheckpointStore'
 import { useModels } from '../hooks/useModels'
 import { useSessionNavigation } from '../contexts/SessionNavigationContext'
 
-// 常量
 const MIN_LIST_HEIGHT = 80
 const MIN_PREVIEW_HEIGHT = 120
-
-type ChangeMode = ChangeScopeMode
-
-function getDefaultChangeMode(options: ChangeMode[]) {
-  if (options.includes('git')) return 'git'
-  if (options.includes('branch')) return 'branch'
-  if (options.includes('session')) return 'session'
-  if (options.includes('turn')) return 'turn'
-  return options[0] ?? 'git'
-}
+const DIRECTORY_MODEL_KEY_PREFIX = 'git-changes-dir:'
 
 function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activeFile: string | null) {
   const availableFiles = new Set(diffs.map(diff => diff.file))
@@ -54,17 +43,15 @@ function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activ
   return { nextOpenFiles, nextActiveFile }
 }
 
-interface SessionChangesPanelProps {
-  sessionId: string
+interface GitChangesPanelProps {
   directory?: string
   isResizing?: boolean
 }
 
-export const SessionChangesPanel = memo(function SessionChangesPanel({
-  sessionId,
+export const GitChangesPanel = memo(function GitChangesPanel({
   directory,
   isResizing: isPanelResizing = false,
-}: SessionChangesPanelProps) {
+}: GitChangesPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -83,20 +70,13 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   })
 
   const [project, setProject] = useState<ApiProject | null>(null)
-  const [vcsInfo, setVcsInfo] = useState<VcsInfo | null>(null)
   const [projectLoading, setProjectLoading] = useState(false)
   const [initializingGit, setInitializingGit] = useState(false)
-  const [loadingModes, setLoadingModes] = useState({ git: false, branch: false, session: false, turn: false })
-  const [loadedModes, setLoadedModes] = useState({ git: false, branch: false, session: false, turn: false })
-  const [gitDiffs, setGitDiffs] = useState<FileDiff[]>([])
-  const [branchDiffs, setBranchDiffs] = useState<FileDiff[]>([])
-  const [sessionDiffs, setSessionDiffs] = useState<FileDiff[]>([])
-  const [turnDiffs, setTurnDiffs] = useState<FileDiff[]>([])
+  const [diffs, setDiffs] = useState<FileDiff[]>([])
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
   const [listMode, setListMode] = useState<'flat' | 'tree'>('flat')
-  const [changeMenuOpen, setChangeMenuOpen] = useState(false)
-  const changeMode = useSessionChangeScope(sessionId)
 
   // 模型选择
   const { models: allModels } = useModels()
@@ -114,128 +94,39 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     [selectedModelKey, visibleModels],
   )
 
-  // 初始化默认选择（优先恢复 session 上次保存的模型，兜底取第一个）
+  // 初始化默认模型（按目录保存偏好）
   useEffect(() => {
     if (selectedModelKey || visibleModels.length === 0) return
-    const saved = getSessionModelSelection(sessionId)
+    const storageKey = DIRECTORY_MODEL_KEY_PREFIX + (directory ?? 'default')
+    const saved = getSessionModelSelection(storageKey)
     if (saved && findModelByKey(visibleModels, saved.modelKey)) {
       setSelectedModelKey(saved.modelKey)
     } else {
       setSelectedModelKey(getModelKey(visibleModels[0]))
     }
-  }, [visibleModels, selectedModelKey, sessionId])
+  }, [visibleModels, selectedModelKey, directory])
 
-  // 用户切换模型时持久化
   const handleModelSelect = useCallback(
     (key: string) => {
       setSelectedModelKey(key)
-      saveSessionModelSelection(sessionId, key, undefined)
+      const storageKey = DIRECTORY_MODEL_KEY_PREFIX + (directory ?? 'default')
+      saveSessionModelSelection(storageKey, key, undefined)
       setModelMenuOpen(false)
     },
-    [sessionId],
+    [directory],
   )
 
-  // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [openDiffFiles, setOpenDiffFiles] = useState<string[]>([])
   const [mountedPreviewFiles, setMountedPreviewFiles] = useState<Set<string>>(new Set())
-
-  // 展开的目录
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
 
   const projectRequestIdRef = useRef(0)
-  const diffRequestIdRef = useRef({ git: 0, branch: 0, session: 0, turn: 0 })
+  const diffRequestIdRef = useRef(0)
   const openDiffFilesRef = useRef<string[]>([])
   const selectedFileRef = useRef<string | null>(null)
-  const changeMenuTriggerRef = useRef<HTMLButtonElement>(null)
-  const changeMenuRef = useRef<HTMLDivElement>(null)
-  const changeMenuOptionRefs = useRef<Partial<Record<ChangeMode, HTMLButtonElement | null>>>({})
-  const changeMenuOpenFocusRef = useRef<'selected' | 'first' | 'last'>('selected')
-  const changeMenuId = useId()
 
   const isAnyResizing = isPanelResizing || isResizing
-  const setChangeMode = useCallback(
-    (mode: ChangeMode) => {
-      changeScopeStore.setMode(sessionId, mode)
-    },
-    [sessionId],
-  )
-  const changeOptions = useMemo<ChangeMode[]>(() => {
-    const options: ChangeMode[] = []
-    if (project?.vcs) options.push('session', 'turn', 'git')
-    if (project?.vcs && vcsInfo?.branch && vcsInfo?.default_branch && vcsInfo.branch !== vcsInfo.default_branch) {
-      options.push('branch')
-    }
-    return options
-  }, [project?.vcs, vcsInfo?.branch, vcsInfo?.default_branch])
-  const preferredChangeMode = useMemo(() => getDefaultChangeMode(changeOptions), [changeOptions])
-  const changeModeMeta = useMemo(
-    () => ({
-      git: {
-        label: t('sessionChanges.gitScope'),
-        description: t('sessionChanges.gitScopeHint'),
-        icon: <GitDiffIcon size={12} />,
-      },
-      branch: {
-        label: t('sessionChanges.branchScope'),
-        description: t('sessionChanges.branchScopeHint', { branch: vcsInfo?.default_branch ?? 'main' }),
-        icon: <GitBranchIcon size={12} />,
-      },
-      session: {
-        label: t('sessionChanges.sessionScope'),
-        description: t('sessionChanges.sessionScopeHint'),
-        icon: <LayersIcon size={12} />,
-      },
-      turn: {
-        label: t('sessionChanges.turnScope'),
-        description: t('sessionChanges.turnScopeHint'),
-        icon: <ClockIcon size={12} />,
-      },
-    }),
-    [t, vcsInfo?.default_branch],
-  )
-  const diffs = useMemo(
-    () =>
-      changeMode === 'git'
-        ? gitDiffs
-        : changeMode === 'branch'
-          ? branchDiffs
-          : changeMode === 'session'
-            ? sessionDiffs
-            : turnDiffs,
-    [branchDiffs, changeMode, gitDiffs, sessionDiffs, turnDiffs],
-  )
-  const loading = projectLoading || initializingGit || loadingModes[changeMode]
-
-  const focusChangeMenuOption = useCallback((mode: ChangeMode) => {
-    changeMenuOptionRefs.current[mode]?.focus()
-  }, [])
-
-  const isVisibleFocusableElement = useCallback((target: EventTarget | null) => {
-    const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
-    const candidate = element?.closest<HTMLElement>(
-      'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )
-    if (!candidate) return false
-
-    const style = window.getComputedStyle(candidate)
-    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
-  }, [])
-
-  const focusRelativeToChangeTrigger = useCallback((direction: 1 | -1) => {
-    const trigger = changeMenuTriggerRef.current
-    if (!trigger) return
-
-    const focusables = Array.from(
-      document.body.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([type="file"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter(element => !element.closest('[aria-hidden="true"]'))
-
-    const currentIndex = focusables.findIndex(item => item === trigger)
-    if (currentIndex === -1) return
-    focusables[currentIndex + direction]?.focus()
-  }, [])
 
   useEffect(() => {
     openDiffFilesRef.current = openDiffFiles
@@ -255,103 +146,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     selectedFileRef.current = selectedFile
   }, [selectedFile])
 
-  useEffect(() => {
-    if (!changeMenuOpen) return
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (changeMenuRef.current?.contains(target) || changeMenuTriggerRef.current?.contains(target)) {
-        return
-      }
-      setChangeMenuOpen(false)
-      if (!isVisibleFocusableElement(event.target)) {
-        changeMenuTriggerRef.current?.focus()
-      }
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setChangeMenuOpen(false)
-        changeMenuTriggerRef.current?.focus()
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [changeMenuOpen, isVisibleFocusableElement])
-
-  useEffect(() => {
-    if (!changeMenuOpen) return
-
-    const targetMode =
-      changeMenuOpenFocusRef.current === 'first'
-        ? changeOptions[0]
-        : changeMenuOpenFocusRef.current === 'last'
-          ? changeOptions[changeOptions.length - 1]
-          : changeOptions.includes(changeMode)
-            ? changeMode
-            : preferredChangeMode
-    const timerId = window.setTimeout(() => {
-      focusChangeMenuOption(targetMode)
-    }, 0)
-
-    return () => {
-      clearTimeout(timerId)
-    }
-  }, [changeMenuOpen, changeOptions, changeMode, focusChangeMenuOption, preferredChangeMode])
-
-  const handleChangeMenuKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (changeOptions.length === 0) return
-
-      const currentIndex = changeOptions.findIndex(mode => changeMenuOptionRefs.current[mode] === document.activeElement)
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        setChangeMenuOpen(false)
-        changeMenuTriggerRef.current?.focus()
-        return
-      }
-
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        setChangeMenuOpen(false)
-        window.setTimeout(() => {
-          focusRelativeToChangeTrigger(event.shiftKey ? -1 : 1)
-        }, 0)
-        return
-      }
-
-      const focusByIndex = (index: number) => {
-        const targetMode = changeOptions[index]
-        if (targetMode) focusChangeMenuOption(targetMode)
-      }
-
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % changeOptions.length
-        focusByIndex(nextIndex)
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        const nextIndex = currentIndex === -1 ? changeOptions.length - 1 : (currentIndex - 1 + changeOptions.length) % changeOptions.length
-        focusByIndex(nextIndex)
-      } else if (event.key === 'Home') {
-        event.preventDefault()
-        focusByIndex(0)
-      } else if (event.key === 'End') {
-        event.preventDefault()
-        focusByIndex(changeOptions.length - 1)
-      }
-    },
-    [changeOptions, focusChangeMenuOption, focusRelativeToChangeTrigger],
-  )
-
   const loadProjectState = useCallback(async () => {
-    if (!sessionId) return null
-
     const requestId = ++projectRequestIdRef.current
     setProjectLoading(true)
     setError(null)
@@ -360,19 +155,11 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
       const nextProject = await getCurrentProject(directory)
       if (requestId !== projectRequestIdRef.current) return null
       setProject(nextProject)
-      if (nextProject.vcs) {
-        const nextVcsInfo = await getVcsInfo(directory).catch(() => null)
-        if (requestId !== projectRequestIdRef.current) return null
-        setVcsInfo(nextVcsInfo)
-      } else {
-        setVcsInfo(null)
-      }
       return nextProject
     } catch (err) {
       if (requestId !== projectRequestIdRef.current) return null
       sessionErrorHandler('load current project', err)
       setProject(null)
-      setVcsInfo(null)
       setError(t('sessionChanges.failedToLoad'))
       return null
     } finally {
@@ -380,111 +167,59 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         setProjectLoading(false)
       }
     }
-  }, [directory, sessionId, t])
+  }, [directory, t])
 
-  const loadDiffMode = useCallback(
-    async (mode: ChangeMode, options?: { force?: boolean; project?: ApiProject | null }) => {
+  const loadGitDiff = useCallback(
+    async (options?: { force?: boolean; project?: ApiProject | null }) => {
       const currentProject = options?.project ?? project
-      if (!sessionId || !currentProject?.vcs) return
-      if (!options?.force && loadedModes[mode]) return
+      if (!currentProject?.vcs) return
 
-      const requestId = ++diffRequestIdRef.current[mode]
-      setLoadingModes(prev => ({ ...prev, [mode]: true }))
+      const requestId = ++diffRequestIdRef.current
+      setLoading(true)
       setError(null)
 
       try {
-        let data: FileDiff[]
-        if (mode === 'git' || mode === 'branch') {
-          data = await getVcsDiff(mode as VcsDiffMode, directory)
-        } else if (mode === 'session') {
-          data = await getSessionDiff(sessionId, directory)
-        } else {
-          const checkpoint = turnCheckpointStore.getCheckpoint(sessionId)
-          if (checkpoint) {
-            data = await getLastTurnDiff(sessionId, directory, checkpoint.messageId)
-          } else {
-            data = await getSessionDiff(sessionId, directory)
-          }
-        }
+        const data = await getVcsDiff('git', directory)
+        if (requestId !== diffRequestIdRef.current) return
 
-        if (requestId !== diffRequestIdRef.current[mode]) return
-
-        // 用 patch 重新计算增删行数，不依赖 API 值（后端统计口径可能不同）
         const corrected = data.map(d => ({
           ...d,
           ...(d.patch ? computePatchStats(d.patch) : { additions: 0, deletions: 0 }),
         }))
 
-        if (mode === 'git') {
-          setGitDiffs(corrected)
-        } else if (mode === 'branch') {
-          setBranchDiffs(corrected)
-        } else if (mode === 'session') {
-          setSessionDiffs(corrected)
-        } else {
-          setTurnDiffs(corrected)
-        }
-
-        setLoadedModes(prev => ({ ...prev, [mode]: true }))
+        setDiffs(corrected)
       } catch (err) {
-        if (requestId !== diffRequestIdRef.current[mode]) return
-        sessionErrorHandler(`load ${mode} diff`, err)
+        if (requestId !== diffRequestIdRef.current) return
+        sessionErrorHandler('load git diff', err)
         setError(t('sessionChanges.failedToLoad'))
       } finally {
-        if (requestId === diffRequestIdRef.current[mode]) {
-          setLoadingModes(prev => ({ ...prev, [mode]: false }))
+        if (requestId === diffRequestIdRef.current) {
+          setLoading(false)
         }
       }
     },
-    [directory, loadedModes, project, sessionId, t],
+    [directory, project, t],
   )
 
   useEffect(() => {
-    diffRequestIdRef.current = {
-      git: diffRequestIdRef.current.git + 1,
-      branch: diffRequestIdRef.current.branch + 1,
-      session: diffRequestIdRef.current.session + 1,
-      turn: diffRequestIdRef.current.turn + 1,
-    }
+    diffRequestIdRef.current++
     setProject(null)
-    setVcsInfo(null)
-    setGitDiffs([])
-    setBranchDiffs([])
-    setSessionDiffs([])
-    setTurnDiffs([])
-    setLoadedModes({ git: false, branch: false, session: false, turn: false })
-    setLoadingModes({ git: false, branch: false, session: false, turn: false })
+    setDiffs([])
+    setLoading(false)
     setError(null)
     setOpenDiffFiles([])
     setSelectedFile(null)
     setMountedPreviewFiles(new Set())
     setExpandedDirs(new Set())
-    setChangeMenuOpen(false)
     resetSplitHeight()
 
     void loadProjectState()
-  }, [directory, sessionId, loadProjectState, resetSplitHeight])
-
-  // 初始化变更类型：store 默认是 'session'，但优先取 preferredChangeMode（git）
-  const changeModeInitializedRef = useRef(false)
-  useEffect(() => {
-    if (changeOptions.length === 0) return
-    if (changeModeInitializedRef.current) {
-      if (changeOptions.includes(changeMode)) return
-      setChangeMode(preferredChangeMode)
-      return
-    }
-    changeModeInitializedRef.current = true
-    if (!changeOptions.includes(changeMode) || changeMode === 'session') {
-      setChangeMode(preferredChangeMode)
-    }
-  }, [changeMode, changeOptions, preferredChangeMode, setChangeMode])
+  }, [directory, loadProjectState, resetSplitHeight])
 
   useEffect(() => {
     if (!project?.vcs) return
-    if (!changeOptions.includes(changeMode)) return
-    void loadDiffMode(changeMode)
-  }, [changeMode, changeOptions, loadDiffMode, project?.vcs])
+    void loadGitDiff()
+  }, [project, loadGitDiff])
 
   useEffect(() => {
     setExpandedDirs(collectExpandedDirPaths(buildChangesTree(diffs)))
@@ -500,45 +235,19 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     }
   }, [diffs, resetSplitHeight])
 
-  // 刷新
   const handleRefresh = useCallback(async () => {
     const nextProject = await loadProjectState()
     if (!nextProject?.vcs) return
-    await loadDiffMode(changeMode, { force: true, project: nextProject })
-  }, [changeMode, loadDiffMode, loadProjectState])
-
-  // 接受本轮变更（记录 checkpoint）
-  const handleAcceptTurn = useCallback(async () => {
-    if (!sessionId) return
-    try {
-      const messageId = await getLastVisibleMessageId(sessionId, directory)
-      if (messageId) {
-        turnCheckpointStore.setCheckpoint(sessionId, messageId)
-        const nextProject = await loadProjectState()
-        if (nextProject?.vcs) {
-          await loadDiffMode('turn', { force: true, project: nextProject })
-        }
-      }
-    } catch (err) {
-      sessionErrorHandler('accept turn', err)
-    }
-  }, [sessionId, directory, loadDiffMode, loadProjectState])
+    await loadGitDiff({ force: true, project: nextProject })
+  }, [loadGitDiff, loadProjectState])
 
   const handleInitGit = useCallback(async () => {
     setInitializingGit(true)
     setError(null)
 
     try {
-      const nextProject = await initGitProject(directory)
-      setProject(nextProject)
-      setVcsInfo(null)
-      setGitDiffs([])
-      setBranchDiffs([])
-      setSessionDiffs([])
-      setTurnDiffs([])
-      setLoadedModes({ git: false, branch: false, session: false, turn: false })
-      setLoadingModes({ git: false, branch: false, session: false, turn: false })
-      setChangeMenuOpen(false)
+      await initGitProject(directory)
+      setDiffs([])
       void loadProjectState()
     } catch (err) {
       sessionErrorHandler('init git project', err)
@@ -548,13 +257,11 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     }
   }, [directory, loadProjectState, t])
 
-  // 选中文件
   const handleSelectFile = useCallback((file: string) => {
     setOpenDiffFiles(prev => (prev.includes(file) ? prev : [...prev, file]))
     setSelectedFile(prev => (prev === file ? prev : file))
   }, [])
 
-  // 切换目录展开/折叠
   const handleToggleDir = useCallback((path: string) => {
     setExpandedDirs(prev => {
       const next = new Set(prev)
@@ -567,10 +274,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     })
   }, [])
 
-  // 构建树形结构
   const changesTree = useMemo(() => buildChangesTree(diffs), [diffs])
 
-  // 关闭预览
   const handleClosePreview = useCallback(() => {
     setOpenDiffFiles([])
     setSelectedFile(null)
@@ -608,7 +313,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     })
   }, [])
 
-  // 获取选中的 diff 数据
   const selectedDiff = selectedFile ? diffs.find(d => d.file === selectedFile) : null
   const previewDiffs = useMemo(
     () =>
@@ -652,7 +356,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     )
   }
 
-  // 总统计
   const totalStats = diffs.reduce(
     (acc, d) => ({
       additions: acc.additions + d.additions,
@@ -661,16 +364,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     { additions: 0, deletions: 0 },
   )
 
-  const emptyText =
-    changeMode === 'git'
-      ? t('sessionChanges.noGitChanges')
-      : changeMode === 'branch'
-        ? t('sessionChanges.noBranchChanges')
-        : changeMode === 'session'
-          ? t('sessionChanges.noChanges')
-          : t('sessionChanges.noTurnChanges')
-
-  const activeChangeModeMeta = changeModeMeta[changeMode]
   const compactFileCountLabel = t('sessionChanges.fileCountCompact', { count: diffs.length })
   const fullFileCountLabel = t('sessionChanges.fileCount', { count: diffs.length })
   const statFadeMaskStyle = {
@@ -680,7 +373,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
 
   return (
     <div ref={containerRef} className="flex flex-col h-full">
-      {/* 文件列表区 */}
       <div
         ref={listRef}
         className="overflow-hidden flex flex-col shrink-0"
@@ -692,7 +384,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           } as React.CSSProperties
         }
       >
-        {/* Header */}
         <div className="relative flex h-10 items-center gap-2 px-3 shrink-0 overflow-hidden">
           <div
             className="min-w-0 flex flex-1 overflow-hidden"
@@ -707,7 +398,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {/* 模型选择 */}
             <button
               ref={modelMenuTriggerRef}
               type="button"
@@ -720,7 +410,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[length:var(--fs-xxs)] transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
             >
               <span className="truncate max-w-[80px]">{selectedModel?.name || 'Model'}</span>
-              <ChevronDownIcon size={10} />
             </button>
 
             <DropdownMenu
@@ -763,7 +452,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               </div>
             </DropdownMenu>
 
-            {/* 批量提交按钮 */}
             <button
               type="button"
               disabled={committing || !selectedModel || diffs.length === 0}
@@ -771,7 +459,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 if (!selectedModel) return
                 setCommitting(true)
                 try {
-                  getModelKey(selectedModel)
                   const newSession = await createSession({
                     title: '按修改分批提交git',
                     directory: directory || undefined,
@@ -799,110 +486,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               <SendIcon size={13} />
             </button>
 
-            <button
-              ref={changeMenuTriggerRef}
-              type="button"
-              onClick={() => {
-                changeMenuOpenFocusRef.current = 'selected'
-                setChangeMenuOpen(open => !open)
-              }}
-              onKeyDown={event => {
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                  event.preventDefault()
-                  changeMenuOpenFocusRef.current = event.key === 'ArrowUp' ? 'last' : 'first'
-                  setChangeMenuOpen(true)
-                }
-              }}
-              aria-label={`${t('sessionChanges.mode')}: ${activeChangeModeMeta.label}`}
-              aria-haspopup="menu"
-              aria-expanded={changeMenuOpen}
-              aria-controls={changeMenuOpen ? changeMenuId : undefined}
-              title={activeChangeModeMeta.label}
-              className={`
-                inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors
-                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}
-              `}
-            >
-              <span className="shrink-0">{activeChangeModeMeta.icon}</span>
-            </button>
-
-            <DropdownMenu
-              triggerRef={changeMenuTriggerRef}
-              isOpen={changeMenuOpen}
-              position="bottom"
-              align="right"
-              minWidth="170px"
-              maxWidth="min(220px, calc(100vw - 24px))"
-              constrainToRef={containerRef}
-              className="!rounded-lg !p-1"
-            >
-              <div
-                id={changeMenuId}
-                ref={changeMenuRef}
-                role="menu"
-                aria-label={t('sessionChanges.mode')}
-                onKeyDown={handleChangeMenuKeyDown}
-                className="space-y-px"
-              >
-                {changeOptions.map(mode => {
-                  const meta = changeModeMeta[mode]
-                  const isSelected = mode === changeMode
-
-                  return (
-                    <button
-                      key={mode}
-                      ref={node => {
-                        changeMenuOptionRefs.current[mode] = node
-                        const shouldFocusNode =
-                          changeMenuOpen &&
-                          ((changeMenuOpenFocusRef.current === 'selected' && isSelected) ||
-                            (changeMenuOpenFocusRef.current === 'first' && mode === changeOptions[0]) ||
-                            (changeMenuOpenFocusRef.current === 'last' && mode === changeOptions[changeOptions.length - 1]))
-
-                        if (node && shouldFocusNode) {
-                          node.focus()
-                        }
-                      }}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isSelected}
-                      tabIndex={isSelected ? 0 : -1}
-                      title={meta.description}
-                      onClick={() => {
-                        setChangeMode(mode)
-                        setChangeMenuOpen(false)
-                        changeMenuTriggerRef.current?.focus()
-                      }}
-                      className={`
-                        group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors
-                        ${
-                          isSelected
-                            ? 'bg-bg-200/70 text-text-100 font-medium'
-                            : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100'
-                        }
-                      `}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </DropdownMenu>
-
-            {/* Accept */}
-            {changeMode === 'turn' && (
-              <button
-                type="button"
-                onClick={handleAcceptTurn}
-                disabled={loading || diffs.length === 0}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors text-success-100 hover:bg-success-100/10 disabled:opacity-40 disabled:cursor-not-allowed"
-                title={t('sessionChanges.acceptTurn')}
-              >
-                <CheckIcon size={14} />
-              </button>
-            )}
-
-            {/* List Mode Toggle */}
             <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
               <button
                 type="button"
@@ -928,7 +511,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               </button>
             </div>
 
-            {/* View Mode Toggle */}
             <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
               <button
                 type="button"
@@ -952,7 +534,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               </button>
             </div>
 
-            {/* Refresh */}
             <button
               type="button"
               onClick={handleRefresh}
@@ -967,19 +548,17 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
           <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
         </div>
 
-        {/* File List */}
         <div className="flex-1 overflow-auto panel-scrollbar-y">
           {loading ? (
             <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">{t('sessionChanges.loadingChanges')}</div>
           ) : error && diffs.length === 0 ? (
             <div className="p-4 text-center text-danger-100 text-[length:var(--fs-sm)]">{error}</div>
           ) : diffs.length === 0 ? (
-            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">{emptyText}</div>
+            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">{t('sessionChanges.noGitChanges')}</div>
           ) : (
             <div className="py-0.5">
               {listMode === 'tree'
-                ? // Tree view
-                  changesTree.map(node => (
+                ? changesTree.map(node => (
                     <ChangesTreeItem
                       key={node.path}
                       node={node}
@@ -989,8 +568,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                       onToggleDir={handleToggleDir}
                     />
                   ))
-                : // Flat list view
-                  diffs.map(diff => {
+                : diffs.map(diff => {
                     const fileStatus = getFileStatus(diff)
 
                     return (
@@ -1030,7 +608,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         </div>
       </div>
 
-      {/* Resize Handle - 与标签栏同色 */}
       {showPreview && (
         <div
           className={`
@@ -1043,7 +620,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         />
       )}
 
-      {/* Diff 预览区 */}
       {showPreview && selectedDiff && (
         <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
           {mountedPreviewDiffs.map(previewDiff => (
@@ -1092,7 +668,6 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
   onClose,
 }: DiffPreviewPanelProps) {
   const language = detectLanguage(diff.file) || 'text'
-  // 优先用 patch 提取 before/after，回退到直接的 before/after 字段（旧版后端兼容）
   const { before, after } = useMemo(() => {
     if (diff.patch) return extractContentFromUnifiedDiff(diff.patch)
     if (diff.before !== undefined && diff.after !== undefined) return { before: diff.before, after: diff.after }
@@ -1154,7 +729,6 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
         }
       />
 
-      {/* Diff Content - DiffViewer 自带滚动 */}
       <div className="flex-1 min-h-0">
         <DiffViewer before={before} after={after} language={language} viewMode={viewMode} isResizing={isResizing} data={diffViewerData} />
       </div>
@@ -1188,7 +762,6 @@ function getFileStatus(diff: FileDiff): FileStatus {
   if (diff.status) return diff.status as FileStatus
   if (diff.deletions === 0 && diff.additions > 0) return 'added'
   if (diff.additions === 0 && diff.deletions > 0) return 'deleted'
-  // 旧版 before/after 兼容
   if (diff.before !== undefined && diff.after !== undefined) {
     if (!diff.before.trim()) return 'added'
     if (!diff.after.trim()) return 'deleted'
@@ -1217,9 +790,6 @@ interface ChangesTreeNode {
   status?: FileStatus
 }
 
-/**
- * 将扁平的 FileDiff[] 转换为树形结构
- */
 function buildChangesTree(diffs: FileDiff[]): ChangesTreeNode[] {
   const root: ChangesTreeNode[] = []
 
@@ -1250,7 +820,6 @@ function buildChangesTree(diffs: FileDiff[]): ChangesTreeNode[] {
       }
 
       if (!isFile) {
-        // 累加目录的统计
         existing.additions += diff.additions
         existing.deletions += diff.deletions
         currentLevel = existing.children
@@ -1258,15 +827,12 @@ function buildChangesTree(diffs: FileDiff[]): ChangesTreeNode[] {
     }
   }
 
-  // 递归排序 + 计算目录状态：目录在前，文件在后，同类按名称排序
   const processNodes = (nodes: ChangesTreeNode[]): ChangesTreeNode[] => {
     return nodes
       .map(n => {
         const processedChildren = processNodes(n.children)
-        // 计算目录的累积状态
         let dirStatus: FileStatus | undefined = undefined
         if (n.type === 'directory' && processedChildren.length > 0) {
-          // 优先级: added > modified > deleted
           const hasAdded = processedChildren.some(c => c.status === 'added')
           const hasModified = processedChildren.some(c => c.status === 'modified')
           const hasDeleted = processedChildren.some(c => c.status === 'deleted')
@@ -1327,7 +893,6 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
   const isExpanded = expandedDirs.has(node.path)
   const paddingLeft = 8 + depth * 16
 
-  // 状态颜色
   const statusColor = node.status ? FILE_STATUS_COLOR[node.status] : 'text-text-400'
 
   if (node.type === 'directory') {
@@ -1351,12 +916,13 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
               e.currentTarget.style.visibility = 'hidden'
             }}
           />
-          <span className={`flex-1 min-w-0 truncate text-left ${node.status ? statusColor : ''}`}>{node.name}</span>
-          <div className="flex items-center gap-1.5 text-[length:var(--fs-xxs)] font-mono pr-3 shrink-0">
+          <span className={`flex-1 min-w-0 font-mono truncate ${statusColor}`}>{node.name}</span>
+          <div className="flex items-center gap-2 text-[length:var(--fs-xxs)] font-mono shrink-0">
             {node.additions > 0 && <span className="text-success-100">+{node.additions}</span>}
             {node.deletions > 0 && <span className="text-danger-100">-{node.deletions}</span>}
           </div>
         </button>
+
         {isExpanded &&
           node.children.map(child => (
             <ChangesTreeItem
@@ -1372,19 +938,14 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
     )
   }
 
-  // File node
   return (
     <button
-      onClick={() => node.diff && onSelectFile(node.diff.file)}
-      className={`
-         w-full min-w-0 flex items-center gap-1.5 py-1 transition-colors text-[length:var(--fs-sm)]
-         hover:bg-bg-200/50
-         text-text-300
-       `}
-      style={{ paddingLeft: paddingLeft + 16 }}
+      onClick={() => onSelectFile(node.path)}
+      className="w-full min-w-0 flex items-center gap-2 py-1 hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)] text-text-300"
+      style={{ paddingLeft }}
     >
       <img
-        src={getMaterialIconUrl(node.name, 'file')}
+        src={getMaterialIconUrl(node.path, 'file')}
         alt=""
         width={16}
         height={16}
@@ -1395,12 +956,8 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
           e.currentTarget.style.visibility = 'hidden'
         }}
       />
-      <span
-        className={`flex-1 min-w-0 font-mono truncate text-left ${node.status ? FILE_STATUS_COLOR[node.status] : ''}`}
-      >
-        {node.name}
-      </span>
-      <div className="flex items-center gap-1.5 text-[length:var(--fs-xxs)] font-mono pr-3 shrink-0">
+      <span className={`flex-1 min-w-0 font-mono truncate ${statusColor}`}>{node.name}</span>
+      <div className="flex items-center gap-2 text-[length:var(--fs-xxs)] font-mono shrink-0">
         {node.additions > 0 && <span className="text-success-100">+{node.additions}</span>}
         {node.deletions > 0 && <span className="text-danger-100">-{node.deletions}</span>}
       </div>
