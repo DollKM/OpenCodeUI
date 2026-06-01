@@ -109,6 +109,11 @@
     "greatWork": "干得漂亮!",
     "inProgress": "{{count}} 个进行中"
   },
+  "quickSendButtons": {
+    "recommend": "按你推荐的来",
+    "continue": "继续",
+    "confirm": "确认"
+  },
   "inputActions": {
     "scrollToBottom": "滚动到底部",
     "reply": "回复..."

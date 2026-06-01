@@ -109,6 +109,11 @@
     "greatWork": "Great work!",
     "inProgress": "{{count}} in progress"
   },
+  "quickSendButtons": {
+    "recommend": "Go with your recommendation",
+    "continue": "Continue",
+    "confirm": "Confirm"
+  },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",
     "reply": "Reply..."

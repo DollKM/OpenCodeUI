@@ -14,6 +14,7 @@ import { InputToolbar } from './input/InputToolbar'
 import type { ModelSelectorHandle } from './ModelSelector'
 import { InputFooter } from './input/InputFooter'
 import { FloatingActions, CollapsedCapsule } from './input/InputActions'
+import { QuickSendButtons } from './input/QuickSendButtons'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
@@ -959,7 +960,8 @@ function InputBoxComponent({
                 : 'absolute bottom-full left-0 right-0 flex justify-center pb-2 pointer-events-none'
             }
           >
-            <div className={isCollapsed ? undefined : 'pointer-events-auto'}>
+          <div className={isCollapsed ? undefined : 'pointer-events-auto'}>
+            <div className="flex items-center justify-center gap-2">
               <FloatingActions
                 showScrollToBottom={showScrollToBottom}
                 isCollapsed={isCollapsed}
@@ -971,7 +973,17 @@ function InputBoxComponent({
                 collapsedPermission={collapsedPermission}
                 collapsedQuestion={collapsedQuestion}
               />
+              {!isCollapsed && (
+                <QuickSendButtons
+                  onSend={onSend}
+                  sessionId={sessionId}
+                  isStreaming={isStreaming}
+                  selectedAgent={selectedAgent}
+                  selectedVariant={selectedVariant}
+                />
+              )}
             </div>
+          </div>
           </div>
 
           {/* Collapsed Capsule - 移动端收起状态 */}
