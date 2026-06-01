@@ -395,8 +395,11 @@ export const ChatPane = memo(function ChatPane({
   useEffect(() => {
     // 没有 session、或者这个 session 已经恢复过了 → 跳过
     if (!routeSessionId || restoredSessionRef.current === routeSessionId) return
-    // messages 还没加载完 → 等下次
-    if (messages.length === 0) return
+    // messages 还没加载完 → 标记已恢复（用户选择优先，不等 SSE 返回的 model 覆盖）
+    if (messages.length === 0) {
+      restoredSessionRef.current = routeSessionId
+      return
+    }
 
     restoredSessionRef.current = routeSessionId
 
