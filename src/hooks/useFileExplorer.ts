@@ -5,9 +5,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listDirectory, getFileContent, getFileStatus, getSessionDiff, getLastTurnDiff, getVcsDiff } from '../api'
+import { listDirectory, getFileContent, getVcsDiff } from '../api'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
-import { useSessionChangeScope } from '../store/changeScopeStore'
 
 export interface FileTreeNode extends FileNode {
   children?: FileTreeNode[]
@@ -51,7 +50,6 @@ export interface UseFileExplorerResult {
 export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileExplorerResult {
   const { directory, autoLoad = true, sessionId } = options
   const { t } = useTranslation(['components'])
-  const changeMode = useSessionChangeScope(sessionId ?? null)
   const directoryRef = useRef(directory)
   directoryRef.current = directory
 
@@ -117,35 +115,18 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     const statusMap = new Map<string, FileStatusItem>()
 
     try {
-      if (!sessionId) {
-        const status = await getFileStatus(directory)
-        if (loadId !== statusLoadIdRef.current) return
+      const diffs = await getVcsDiff('git', directory)
+      if (loadId !== statusLoadIdRef.current) return
 
-        status.forEach(item => {
-          const normalized = normalizePath(item.path)
-          if (normalized.startsWith('../')) return
-          statusMap.set(normalized, { ...item, path: normalized })
+      diffs.forEach(diff => {
+        const normalized = normalizePath(diff.file)
+        statusMap.set(normalized, {
+          path: normalized,
+          added: diff.additions,
+          removed: diff.deletions,
+          status: getFileStatusFromDiff(diff),
         })
-      } else {
-        const diffs =
-          changeMode === 'git' || changeMode === 'branch'
-            ? await getVcsDiff(changeMode, directory)
-            : changeMode === 'turn'
-              ? await getLastTurnDiff(sessionId, directory)
-              : await getSessionDiff(sessionId, directory)
-
-        if (loadId !== statusLoadIdRef.current) return
-
-        diffs.forEach(diff => {
-          const normalized = normalizePath(diff.file)
-          statusMap.set(normalized, {
-            path: normalized,
-            added: diff.additions,
-            removed: diff.deletions,
-            status: getFileStatusFromDiff(diff),
-          })
-        })
-      }
+      })
 
       computeDirectoryStatus(statusMap)
       setFileStatus(statusMap)
@@ -153,7 +134,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       if (loadId !== statusLoadIdRef.current) return
       setFileStatus(new Map())
     }
-  }, [changeMode, directory, sessionId])
+  }, [directory])
 
   // 加载子目录
   const loadChildren = useCallback(
