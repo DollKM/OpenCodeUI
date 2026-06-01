@@ -36,7 +36,7 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(persisted.panelTabs.some((tab: { id: string }) => tab.id === 'term-1')).toBe(false)
 
     const restored = new LayoutStore().getState()
-    expect(restored.rightPanelOpen).toBe(true)
+    expect(restored.rightPanelOpen).toBe(false)
     expect(restored.bottomPanelOpen).toBe(true)
     expect(restored.panelTabs.some(tab => tab.id === 'mcp' && tab.position === 'bottom')).toBe(true)
     expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)

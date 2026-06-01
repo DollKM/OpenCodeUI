@@ -444,7 +444,8 @@ export class LayoutStore {
         if (restored) {
           this.state.panelTabs = restored.panelTabs.map(normalizePersistedPanelTab)
           this.state.activeTabId = { ...restored.activeTabId }
-          this.state.rightPanelOpen = restored.rightPanelOpen
+          // 启动时右侧面板默认关闭，避免后端未就绪时 GitChangesPanel 加载失败
+          this.state.rightPanelOpen = false
           this.state.bottomPanelOpen = restored.bottomPanelOpen
         }
       }
