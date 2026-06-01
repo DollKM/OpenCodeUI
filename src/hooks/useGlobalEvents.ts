@@ -348,6 +348,33 @@ export function useGlobalEvents(directories?: string[]) {
 
     refreshRef.current = fetchAndInitialize
 
+    const approveGlobalPendingPermissions = () => {
+      if (!autoApproveStore.approvePendingOnFullAuto || autoApproveStore.fullAutoMode !== 'global') return
+
+      const directoriesToFetch = directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
+
+      void Promise.all(
+        directoriesToFetch.map(async directory => {
+          const permissions = await getPendingPermissions(undefined, directory).catch(() => [])
+
+          await Promise.all(
+            permissions.map(async request => {
+              if (!autoApproveStore.claimAutoReply(request.id)) return
+
+              const dir = directory ?? activeSessionStore.getSessionMeta(request.sessionID)?.directory
+              try {
+                await replyPermission(request.id, 'once', undefined, dir, request.sessionID)
+              } catch {
+                autoApproveStore.releaseAutoReply(request.id)
+              }
+            }),
+          )
+        }),
+      )
+    }
+
+    const unsubscribeAutoApprove = autoApproveStore.subscribe(approveGlobalPendingPermissions)
+
     const unsubscribe = subscribeToEvents({
       // ============================================
       // Message Events → messageStore
@@ -459,7 +486,11 @@ export function useGlobalEvents(directories?: string[]) {
         // Full Auto 全局模式拦截 — 所有会话的权限请求直接放行
         if (autoApproveStore.fullAutoMode === 'global') {
           const dir = activeSessionStore.getSessionMeta(request.sessionID)?.directory
-          replyPermission(request.id, 'once', undefined, dir, request.sessionID).catch(() => {})
+          if (autoApproveStore.claimAutoReply(request.id)) {
+            replyPermission(request.id, 'once', undefined, dir, request.sessionID).catch(() => {
+              autoApproveStore.releaseAutoReply(request.id)
+            })
+          }
           return
         }
 
@@ -604,12 +635,14 @@ export function useGlobalEvents(directories?: string[]) {
     })
 
     fetchAndInitialize()
+    approveGlobalPendingPermissions()
 
     return () => {
       disposed = true
       if (refreshRef.current === fetchAndInitialize) {
         refreshRef.current = null
       }
+      unsubscribeAutoApprove()
       unsubscribe()
     }
   }, [])

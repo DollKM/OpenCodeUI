@@ -25,10 +25,13 @@ const {
   activeSessionStoreMock,
   applyServerConnectedTimestampMock,
   getActiveServerIdMock,
+  autoApproveStoreMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
   getSessionStatusMock: vi.fn<(directory?: string) => Promise<Record<string, { type: string }>>>(() => Promise.resolve({})),
-  getPendingPermissionsMock: vi.fn(() => Promise.resolve([])),
+  getPendingPermissionsMock: vi.fn(() =>
+    Promise.resolve([] as Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>),
+  ),
   getPendingQuestionsMock: vi.fn(() => Promise.resolve([])),
   replyPermissionMock: vi.fn(() => Promise.resolve()),
   childBelongsToSessionMock: vi.fn<(sessionId: string, rootSessionId: string) => boolean>(() => false),
@@ -53,6 +56,13 @@ const {
     resolvePendingRequest: vi.fn(),
     updateStatus: vi.fn(),
     getSnapshot: vi.fn(() => ({ statusMap: {} })),
+  },
+  autoApproveStoreMock: {
+    fullAutoMode: 'off' as 'off' | 'session' | 'global',
+    approvePendingOnFullAuto: false,
+    subscribe: vi.fn((_listener: () => void) => vi.fn()),
+    claimAutoReply: vi.fn((_requestId: string) => true),
+    releaseAutoReply: vi.fn((_requestId: string) => undefined),
   },
 }))
 
@@ -120,9 +130,7 @@ vi.mock('../utils/notificationSoundBridge', () => ({
 }))
 
 vi.mock('../store/autoApproveStore', () => ({
-  autoApproveStore: {
-    fullAutoMode: 'off',
-  },
+  autoApproveStore: autoApproveStoreMock,
 }))
 
 describe('useGlobalEvents', () => {
@@ -140,6 +148,11 @@ describe('useGlobalEvents', () => {
     isSystemEnabledMock.mockReset()
     applyServerConnectedTimestampMock.mockReset()
     getActiveServerIdMock.mockReset()
+    autoApproveStoreMock.fullAutoMode = 'off'
+    autoApproveStoreMock.approvePendingOnFullAuto = false
+    autoApproveStoreMock.subscribe.mockReset()
+    autoApproveStoreMock.claimAutoReply.mockReset()
+    autoApproveStoreMock.releaseAutoReply.mockReset()
     Object.values(activeSessionStoreMock).forEach(value => {
       if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
     })
@@ -150,6 +163,8 @@ describe('useGlobalEvents', () => {
     })
     isSystemEnabledMock.mockImplementation((type: string) => type !== 'permission')
     getActiveServerIdMock.mockReturnValue('local')
+    autoApproveStoreMock.subscribe.mockReturnValue(vi.fn())
+    autoApproveStoreMock.claimAutoReply.mockReturnValue(true)
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Child Session', directory: '/workspace' })
     activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: {} })
   })
@@ -382,6 +397,51 @@ describe('useGlobalEvents', () => {
     )
 
     unregister()
+  })
+
+  it('approves already waiting permissions when global full auto pending sweep is enabled', async () => {
+    autoApproveStoreMock.fullAutoMode = 'global'
+    autoApproveStoreMock.approvePendingOnFullAuto = true
+    getPendingPermissionsMock.mockResolvedValue([
+      {
+        id: 'perm-global',
+        sessionID: 'background-session',
+        permission: 'bash',
+        patterns: ['npm test'],
+      },
+    ])
+    activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Background', directory: '/workspace' })
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+
+    await waitFor(() => {
+      expect(replyPermissionMock).toHaveBeenCalledWith(
+        'perm-global',
+        'once',
+        undefined,
+        '/workspace',
+        'background-session',
+      )
+    })
+    expect(autoApproveStoreMock.claimAutoReply).toHaveBeenCalledWith('perm-global')
+  })
+
+  it('does not approve already waiting permissions when the pending sweep is disabled', async () => {
+    autoApproveStoreMock.fullAutoMode = 'global'
+    autoApproveStoreMock.approvePendingOnFullAuto = false
+    getPendingPermissionsMock.mockResolvedValue([
+      {
+        id: 'perm-global',
+        sessionID: 'background-session',
+        permission: 'bash',
+        patterns: ['npm test'],
+      },
+    ])
+
+    renderHook(() => useGlobalEvents(['/workspace']))
+
+    await waitFor(() => expect(getPendingPermissionsMock).toHaveBeenCalled())
+    expect(replyPermissionMock).not.toHaveBeenCalled()
   })
 
   it('still plays current-session sound for the directly focused session', async () => {

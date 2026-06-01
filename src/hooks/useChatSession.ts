@@ -36,6 +36,7 @@ import {
   updateSession,
   forkSession,
   extractUserMessageContent,
+  type ApiPermissionRequest,
   type ApiSession,
   type ApiAgent,
   type Attachment,
@@ -204,6 +205,39 @@ export function useChatSession({
   // Effective directory (used in multiple places)
   const effectiveDirectory = sessionDirectory || currentDirectory
 
+  const fullAutoMode = useSyncExternalStore(
+    cb => autoApproveStore.onFullAutoChange(cb),
+    () => autoApproveStore.getPaneFullAutoMode(paneId),
+  )
+  const approvePendingOnFullAuto = useSyncExternalStore(
+    autoApproveStore.subscribe,
+    () => autoApproveStore.approvePendingOnFullAuto,
+  )
+
+  const replyPermissionOnceAutomatically = useCallback(
+    (request: ApiPermissionRequest) => {
+      if (!autoApproveStore.claimAutoReply(request.id)) return
+
+      void handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID).then(success => {
+        if (!success) autoApproveStore.releaseAutoReply(request.id)
+      })
+    },
+    [effectiveDirectory, handlePermissionReply],
+  )
+
+  useEffect(() => {
+    if (!routeSessionId || !approvePendingOnFullAuto || fullAutoMode !== 'session') return
+    void refreshPendingRequests(sessionFamily, effectiveDirectory)
+  }, [approvePendingOnFullAuto, effectiveDirectory, fullAutoMode, refreshPendingRequests, routeSessionId, sessionFamily])
+
+  useEffect(() => {
+    if (!approvePendingOnFullAuto || fullAutoMode === 'off' || pendingPermissionRequests.length === 0) return
+
+    for (const request of pendingPermissionRequests) {
+      replyPermissionOnceAutomatically(request)
+    }
+  }, [approvePendingOnFullAuto, fullAutoMode, pendingPermissionRequests, replyPermissionOnceAutomatically])
+
   const buildLocalQueuedMessage = useCallback(
     (input: {
       sessionId: string
@@ -294,7 +328,7 @@ export function useChatSession({
         // Full Auto 会话级：当前 session 的 handler 天然只处理当前 session 的请求
         const effectiveFullAutoMode = autoApproveStore.getPaneFullAutoMode(paneId)
         if (effectiveFullAutoMode === 'session') {
-          handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID)
+          replyPermissionOnceAutomatically(request)
           return
         }
 
@@ -304,7 +338,7 @@ export function useChatSession({
           autoApproveStore.shouldAutoApprove(request.sessionID, request.permission, request.patterns)
         ) {
           // 匹配规则，自动用 once 批准，不弹框
-          handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID)
+          replyPermissionOnceAutomatically(request)
           return
         }
 
@@ -399,7 +433,7 @@ export function useChatSession({
       routeSessionId,
       sessionFamily,
       currentDirectory,
-      handlePermissionReply,
+      replyPermissionOnceAutomatically,
       setPendingPermissionRequests,
       setPendingQuestionRequests,
       buildNotificationTitle,

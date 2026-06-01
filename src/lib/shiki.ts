@@ -104,12 +104,32 @@ export async function codeToHtml(code: string, opts: { lang: string; theme: Shik
   return h.codeToHtml(code, { lang: opts.lang, theme: opts.theme })
 }
 
+export function codeToHtmlSyncIfLoaded(code: string, opts: { lang: string; theme: ShikiThemeInput }): string | null {
+  if (!highlighter || !highlighter.getLoadedLanguages().includes(opts.lang)) return null
+
+  try {
+    return highlighter.codeToHtml(code, { lang: opts.lang, theme: opts.theme })
+  } catch {
+    return null
+  }
+}
+
 export async function codeToTokens(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
   const h = await getHighlighter()
   const loaded = await ensureLang(opts.lang)
   if (!loaded) throw new Error(`Unsupported Shiki language: ${opts.lang}`)
 
   return h.codeToTokens(code, { lang: opts.lang, theme: opts.theme })
+}
+
+export function codeToTokensSyncIfLoaded(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
+  if (!highlighter || !highlighter.getLoadedLanguages().includes(opts.lang)) return null
+
+  try {
+    return highlighter.codeToTokens(code, { lang: opts.lang, theme: opts.theme })
+  } catch {
+    return null
+  }
 }
 
 // ── 语言支持检测（纯元数据，不拉 grammar）──────────────────
