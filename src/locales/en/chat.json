@@ -11,7 +11,12 @@
     "openPanel": "Open panel",
     "openInVSCode": "Open in VSCode",
     "integrations": "Integrations",
-    "changes": "Changes"
+    "changes": "Changes",
+    "mcpServers": "MCP",
+    "skills": "Skills",
+    "worktrees": "Worktrees",
+    "terminal": "Terminal",
+    "files": "Files"
   },
   "chatArea": {
     "loadingSession": "Loading session...",

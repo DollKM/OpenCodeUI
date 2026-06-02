@@ -1,28 +1,33 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  PanelRightIcon,
-  PanelBottomIcon,
   ChevronDownIcon,
   SidebarIcon,
-  SplitHorizontalIcon,
   MaximizeIcon,
   MinimizeIcon,
   AppWindowIcon,
-  LayersIcon,
-  GitDiffIcon,
+  GitCommitIcon,
+  PlugIcon,
+  TeachIcon,
+  GitWorktreeIcon,
+  TerminalIcon,
+  FolderIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useMessageStore } from '../../store'
-import { useLayoutStore, layoutStore } from '../../store/layoutStore'
+import { layoutStore } from '../../store/layoutStore'
+import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport } from './chatViewport'
 import { isTauri } from '../../utils/tauri'
+import { skillUsageStore } from '../../store/skillUsageStore'
+import { createPtySession } from '../../api/pty'
+import { logger } from '../../utils/logger'
 import type { ModelInfo } from '../../api'
 
 interface HeaderProps {
@@ -31,7 +36,6 @@ interface HeaderProps {
   selectedModelKey: string | null
   onModelChange: (modelKey: string, model: ModelInfo) => void
   onOpenSidebar?: () => void
-  onSplitPane?: () => void
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
   modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
@@ -120,17 +124,20 @@ export function Header({
   selectedModelKey,
   onModelChange,
   onOpenSidebar,
-  onSplitPane,
   isPaneFullscreen = false,
   onTogglePaneFullscreen,
   modelSelectorRef,
 }: HeaderProps) {
   const { t } = useTranslation('chat')
   const { sessionId, sessionDirectory, sessionTitle: currentSessionTitle } = useMessageStore()
-  const { rightPanelOpen, bottomPanelOpen } = useLayoutStore()
   const { refresh } = useSessionContext()
   const { currentDirectory } = useDirectory()
   const { presentation, interaction } = useChatViewport()
+  const skillUsageTotal = useSyncExternalStore(
+    useCallback(cb => skillUsageStore.subscribe(cb), []),
+    useCallback(() => skillUsageStore.getTotalUsage(), []),
+    useCallback(() => skillUsageStore.getTotalUsage(), []),
+  )
 
   const directory = sessionDirectory || currentDirectory
 
@@ -148,6 +155,30 @@ export function Header({
       window.open(vscodeUri)
     }
   }, [directory])
+
+  const handleOpenTerminal = useCallback(async () => {
+    const sessionId = paneLayoutStore.getFocusedSessionId()
+    const directory = sessionId ? messageStore.getSessionDirectory(sessionId) : ''
+    try {
+      const existing = layoutStore.getTabsForPosition('bottom').find(t => t.type === 'terminal')
+      if (existing) {
+        layoutStore.openBottomPanel()
+        layoutStore.setActiveTab('bottom', existing.id)
+        return
+      }
+      const pty = await createPtySession(
+        { cwd: directory || undefined },
+        directory || undefined,
+      )
+      layoutStore.addTerminalTab({
+        id: pty.id,
+        title: pty.title || 'Terminal',
+        status: 'connecting',
+      })
+    } catch (error) {
+      logger.error('[Header] Failed to create terminal:', error)
+    }
+  }, [])
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -258,22 +289,63 @@ export function Header({
           )}
 
           <IconButton
-            aria-label={t('header.integrations')}
-            onClick={() => layoutStore.addIntegrationsTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-          >
-            <LayersIcon size={18} />
-          </IconButton>
-
-          <IconButton
             aria-label={t('header.changes')}
             onClick={() => layoutStore.addChangesTab('right')}
             className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            title={t('header.changes')}
           >
-            <GitDiffIcon size={18} />
+            <GitCommitIcon size={18} />
           </IconButton>
 
-          <div className="w-[1px] h-5 bg-border-200/30 mx-1" />
+          <IconButton
+            aria-label={t('header.skills')}
+            onClick={() => layoutStore.addSkillTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50 relative"
+            title={t('header.skills')}
+          >
+            <TeachIcon size={18} />
+            {skillUsageTotal > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-3.5 h-3.5 px-1 rounded-full bg-accent-main-100 text-oncolor-100 text-[9px] font-medium leading-none">
+                {skillUsageTotal > 99 ? '99+' : skillUsageTotal}
+              </span>
+            )}
+          </IconButton>
+
+          <IconButton
+            aria-label={t('header.mcpServers')}
+            onClick={() => layoutStore.addMcpTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            title={t('header.mcpServers')}
+          >
+            <PlugIcon size={18} />
+          </IconButton>
+
+          <IconButton
+            aria-label={t('header.worktrees')}
+            onClick={() => layoutStore.addWorktreeTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            title={t('header.worktrees')}
+          >
+            <GitWorktreeIcon size={18} />
+          </IconButton>
+
+          <IconButton
+            aria-label={t('header.terminal')}
+            onClick={handleOpenTerminal}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            title={t('header.terminal')}
+          >
+            <TerminalIcon size={18} />
+          </IconButton>
+
+          <IconButton
+            aria-label={t('header.files')}
+            onClick={() => layoutStore.addFilesTab('right')}
+            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+            title={t('header.files')}
+          >
+            <FolderIcon size={18} />
+          </IconButton>
 
           {onTogglePaneFullscreen && (
             <IconButton
@@ -288,32 +360,6 @@ export function Header({
               {isPaneFullscreen ? <MinimizeIcon size={18} /> : <MaximizeIcon size={18} />}
             </IconButton>
           )}
-
-          {onSplitPane && (
-            <IconButton
-              aria-label="Split pane"
-              onClick={onSplitPane}
-              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            >
-              <SplitHorizontalIcon size={18} />
-            </IconButton>
-          )}
-
-          <IconButton
-            aria-label={bottomPanelOpen ? t('header.closeBottomPanel') : t('header.openBottomPanel')}
-            onClick={() => layoutStore.toggleBottomPanel()}
-            className={`transition-colors ${bottomPanelOpen ? 'text-accent-main-100 bg-bg-200/50' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}`}
-          >
-            <PanelBottomIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={rightPanelOpen ? t('header.closePanel') : t('header.openPanel')}
-            onClick={() => layoutStore.toggleRightPanel()}
-            className={`transition-colors ${rightPanelOpen ? 'text-accent-main-100 bg-bg-200/50' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}`}
-          >
-            <PanelRightIcon size={18} />
-          </IconButton>
         </div>
       </div>
 

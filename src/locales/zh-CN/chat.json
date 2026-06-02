@@ -11,7 +11,12 @@
     "openPanel": "打开面板",
     "openInVSCode": "在 VSCode 中打开",
     "integrations": "集成",
-    "changes": "变更"
+    "changes": "变更",
+    "mcpServers": "MCP",
+    "skills": "技能",
+    "worktrees": "工作树",
+    "terminal": "终端",
+    "files": "文件"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",
