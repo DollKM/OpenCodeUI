@@ -560,11 +560,9 @@ const SkillRow = memo(function SkillRow({ skill, usage }: { skill: Skill; usage:
           <div className="text-[length:var(--fs-sm)] text-text-100 truncate">{skill.name}</div>
           <div className="text-[length:var(--fs-xs)] text-text-400 truncate">{skill.description}</div>
         </div>
-        {usage > 0 && (
-          <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
-            {usage}
-          </span>
-        )}
+        <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
+          {usage}
+        </span>
       </button>
       {expanded && (
         <div className="ml-6 mr-2 mb-1 rounded-md border border-border-200/30 bg-bg-100/50 px-2 py-1.5">

@@ -7,10 +7,19 @@ class SkillUsageStore {
   private usage = new Map<string, number>()
   private subscribers = new Set<Subscriber>()
   private knownSkillNames = new Set<string>()
+  private cachedUsage: Record<string, number> = {}
 
   constructor() {
     this.load()
     this.loadKnownNames()
+  }
+
+  private rebuildCache() {
+    const next: Record<string, number> = {}
+    for (const [name, count] of this.usage) {
+      next[name] = count
+    }
+    this.cachedUsage = next
   }
 
   private load() {
@@ -25,6 +34,7 @@ class SkillUsageStore {
     } catch {
       this.usage.clear()
     }
+    this.rebuildCache()
   }
 
   private loadKnownNames() {
@@ -72,16 +82,13 @@ class SkillUsageStore {
   recordSkill(skillName: string) {
     const current = this.usage.get(skillName) ?? 0
     this.usage.set(skillName, current + 1)
+    this.rebuildCache()
     this.persist()
     this.notify()
   }
 
   getUsage(): Record<string, number> {
-    const result: Record<string, number> = {}
-    for (const [name, count] of this.usage) {
-      result[name] = count
-    }
-    return result
+    return this.cachedUsage
   }
 
   getTotalUsage(): number {
@@ -94,6 +101,7 @@ class SkillUsageStore {
 
   clearAll() {
     this.usage.clear()
+    this.rebuildCache()
     localStorage.removeItem(STORAGE_KEY)
     this.notify()
   }

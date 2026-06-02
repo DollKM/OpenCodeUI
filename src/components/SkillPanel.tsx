@@ -3,7 +3,7 @@
 // 显示所有可用 Skill，支持查看详情
 // ============================================
 
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TeachIcon,
@@ -18,6 +18,7 @@ import { getSkills } from '../api/skill'
 import type { Skill } from '../types/api/skill'
 import { useDirectory } from '../hooks'
 import { apiErrorHandler } from '../utils'
+import { skillUsageStore } from '../store/skillUsageStore'
 
 // ============================================
 // SkillPanel Component
@@ -34,6 +35,11 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  const skillUsage = useSyncExternalStore(
+    useCallback(cb => skillUsageStore.subscribe(cb), []),
+    useCallback(() => skillUsageStore.getUsage(), []),
+    useCallback(() => skillUsageStore.getUsage(), []),
+  )
 
   const loadSkills = useCallback(async () => {
     try {
@@ -41,6 +47,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
       setError(null)
       const data = await getSkills(currentDirectory)
       setSkills(data)
+      skillUsageStore.registerSkillNames(data.map(s => s.name))
     } catch (err) {
       apiErrorHandler('load skills', err)
       setError(t('skillPanel.failedToLoad'))
@@ -124,10 +131,24 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
             <span>{t('skillPanel.noSkills')}</span>
           </div>
         ) : (
-          <div className="p-1">
-            {filteredSkills.map(skill => (
-              <SkillItem key={skill.name} skill={skill} />
-            ))}
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between px-3 py-1 shrink-0">
+              <span className="text-[length:var(--fs-xs)] text-text-400">
+                {t('skillPanel.usageCount', { count: skillUsageStore.getTotalUsage() })}
+              </span>
+              <button
+                type="button"
+                onClick={() => skillUsageStore.clearAll()}
+                className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 hover:bg-danger-100/10 px-1.5 py-0.5 rounded transition-colors"
+              >
+                {t('skillPanel.clearUsage')}
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-1">
+              {filteredSkills.map(skill => (
+                <SkillItem key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -139,7 +160,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
 // SkillItem Component
 // ============================================
 
-const SkillItem = memo(function SkillItem({ skill }: { skill: Skill }) {
+const SkillItem = memo(function SkillItem({ skill, usage }: { skill: Skill; usage: number }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -158,6 +179,9 @@ const SkillItem = memo(function SkillItem({ skill }: { skill: Skill }) {
           <div className="text-[length:var(--fs-base)] text-text-100 font-medium">{skill.name}</div>
           <div className="text-[length:var(--fs-sm)] text-text-400 truncate">{skill.description}</div>
         </div>
+        <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
+          {usage}
+        </span>
       </button>
 
       {expanded && (
