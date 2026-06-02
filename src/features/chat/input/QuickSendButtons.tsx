@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { SendIcon } from '../../../components/Icons'
 import type { Attachment } from '../../attachment'
 
-const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm'] as const
+const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm', 'whatDoYouThink'] as const
 
 interface QuickSendButtonsProps {
   onSend: (text: string, attachments: Attachment[], options?: { agent?: string; variant?: string }) => Promise<boolean> | boolean

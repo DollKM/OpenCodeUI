@@ -112,7 +112,8 @@
   "quickSendButtons": {
     "recommend": "Go with your recommendation",
     "continue": "Continue",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "whatDoYouThink": "What do you think?"
   },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",
