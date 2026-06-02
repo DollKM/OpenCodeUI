@@ -10,11 +10,10 @@ import {
   ChevronRightIcon,
   FolderOpenIcon,
   SettingsIcon,
-  AppWindowIcon,
 } from './Icons'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
-import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
+import { getDesktopPlatform, usesCustomDesktopTitlebar } from '../utils/tauri'
 
 
 /* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
@@ -87,15 +86,6 @@ export function DesktopTitlebar() {
     window.dispatchEvent(new CustomEvent('titlebar:open-settings'))
   }, [])
 
-  const handleNewWindow = useCallback(() => {
-    if (!isTauri()) return
-    void import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('open_new_window', { directory: null }).catch(() => {
-        // 静默
-      })
-    })
-  }, [])
-
   if (!isDesktopChrome) return null
 
   return (
@@ -151,17 +141,6 @@ export function DesktopTitlebar() {
           aria-label={t('desktopTitlebar.openSettings')}
         >
           <SettingsIcon size={14} />
-        </button>
-
-        {/* 新建窗口 */}
-        <button
-          type="button"
-          onClick={handleNewWindow}
-          className={titlebarButtonClass}
-          title={t('desktopTitlebar.newWindow')}
-          aria-label={t('desktopTitlebar.newWindow')}
-        >
-          <AppWindowIcon size={14} />
         </button>
       </div>
 
