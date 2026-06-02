@@ -115,6 +115,8 @@
     "inProgress": "{{count}} 个进行中"
   },
   "quickSendButtons": {
+    "grillMe": "Grill Me",
+    "grillWithDocs": "Grill with Docs",
     "recommend": "按你推荐的来",
     "continue": "继续",
     "confirm": "确认",

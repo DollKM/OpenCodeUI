@@ -115,6 +115,8 @@
     "inProgress": "{{count}} in progress"
   },
   "quickSendButtons": {
+    "grillMe": "Grill Me",
+    "grillWithDocs": "Grill with Docs",
     "recommend": "Go with your recommendation",
     "continue": "Continue",
     "confirm": "Confirm",

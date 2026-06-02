@@ -980,6 +980,26 @@ function InputBoxComponent({
                   isStreaming={isStreaming}
                   selectedAgent={selectedAgent}
                   selectedVariant={selectedVariant}
+                  onInsertText={(cmd: string) => {
+                    const commandName = cmd.replace(/^\//, '').trim()
+                    const attachment: Attachment = {
+                      id: crypto.randomUUID(),
+                      type: 'command',
+                      displayName: commandName,
+                      commandName,
+                      textRange: {
+                        value: cmd,
+                        start: 0,
+                        end: cmd.length,
+                      },
+                    }
+                    setText(cmd)
+                    setAttachments(prev => [...prev, attachment])
+                    requestAnimationFrame(() => {
+                      textareaRef.current?.focus()
+                      textareaRef.current?.setSelectionRange(cmd.length, cmd.length)
+                    })
+                  }}
                 />
               )}
             </div>
