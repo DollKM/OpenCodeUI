@@ -15,7 +15,6 @@ import {
   PlusIcon,
   TrashIcon,
   SearchIcon,
-  ChevronDownIcon,
   PencilIcon,
   CheckIcon,
   CheckSquareIcon,

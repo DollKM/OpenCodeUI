@@ -133,7 +133,8 @@ export function Header({
   const { refresh } = useSessionContext()
   const { currentDirectory } = useDirectory()
   const { presentation, interaction } = useChatViewport()
-  const skillUsageTotal = useSyncExternalStore(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  useSyncExternalStore(
     useCallback(cb => skillUsageStore.subscribe(cb), []),
     useCallback(() => skillUsageStore.getTotalUsage(), []),
     useCallback(() => skillUsageStore.getTotalUsage(), []),
