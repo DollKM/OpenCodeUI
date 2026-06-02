@@ -105,13 +105,15 @@ describe('useModelSelection', () => {
     expect(result.current.selectedModelKey).toBe('openai:gpt-4.1')
   })
 
-  it('falls back to the first visible model when the persisted model disappears', () => {
+  it('falls back to the first visible model when the persisted model disappears, without overwriting storage', () => {
     storage.set(STORAGE_KEY_SELECTED_MODEL, 'openai:gpt-4o-mini')
 
     const { result } = renderHook(() => useModelSelection({ models: [MODELS[0]] }))
 
+    // dropdown 暂时显示回退模型（models[0]）
     expect(result.current.selectedModelKey).toBe('openai:gpt-4.1')
-    expect(storage.get(STORAGE_KEY_SELECTED_MODEL)).toBe('openai:gpt-4.1')
+    // 但用户的原始选择不被覆盖，模型列表回来时会自动恢复
+    expect(storage.get(STORAGE_KEY_SELECTED_MODEL)).toBe('openai:gpt-4o-mini')
   })
 
   it('saves variant preference for the resolved fallback model before switching away', () => {

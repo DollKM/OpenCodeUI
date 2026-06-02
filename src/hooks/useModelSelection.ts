@@ -101,6 +101,10 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
   }, [models, sessionId, sessionSelection])
 
   useLayoutEffect(() => {
+    // 用户有显式选择但当前列表中不存在（如 refetch 中）
+    // → 跳过持久化，避免用回退模型（models[0]）覆盖用户的原始选择
+    if (selectedModelKey && !persistedModel) return
+
     if (sessionId && sessionSelection && hydratedSessionRef.current !== sessionId) return
     if (sessionId && skipPersistenceRef.current === sessionId) {
       skipPersistenceRef.current = null
@@ -119,7 +123,7 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
     if (models.length > 0) {
       serverStorage.remove(STORAGE_KEY_SELECTED_MODEL)
     }
-  }, [resolvedModelKey, resolvedSelectedVariant, sessionId, sessionSelection, models.length])
+  }, [resolvedModelKey, resolvedSelectedVariant, sessionId, sessionSelection, models.length, selectedModelKey, persistedModel])
 
   // 切换模型
   const handleModelChange = useCallback(

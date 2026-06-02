@@ -218,6 +218,7 @@ export const GitChangesPanel = memo(function GitChangesPanel({
     setError(null)
     setOpenDiffFiles([])
     setSelectedFile(null)
+    setSelectedModelKey(null)
     setMountedPreviewFiles(new Set())
     setExpandedDirs(new Set())
     resetSplitHeight()
