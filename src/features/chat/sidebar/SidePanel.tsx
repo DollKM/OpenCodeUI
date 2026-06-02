@@ -159,7 +159,6 @@ export function SidePanel({
     isOpen: false,
     projectId: null,
   })
-  const [projectsExpanded, setProjectsExpanded] = useState(true)
   const [sidebarTab, setSidebarTab] = useState<'recents' | 'active'>('recents')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
@@ -170,8 +169,6 @@ export function SidePanel({
   const sessionSelectionAnchorIdRef = useRef<string | null>(null)
   const projectSelectionAnchorIdRef = useRef<string | null>(null)
   const recentsSelectionRootRef = useRef<HTMLDivElement>(null)
-  const projectToggleRef = useRef<HTMLButtonElement>(null)
-  const projectsDropdownRef = useRef<HTMLDivElement>(null)
   const pendingAutoSelectRef = useRef(false)
   // 批量删除确认弹窗
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
@@ -255,14 +252,6 @@ export function SidePanel({
   const showLabels = isExpanded || isMobile
   const newChatShortcut = useKeybindingLabel('newSession')
 
-  useEffect(() => {
-    if (showLabels && projectsExpanded) return
-    const activeElement = document.activeElement as Node | null
-    if (activeElement && projectsDropdownRef.current?.contains(activeElement)) {
-      projectToggleRef.current?.focus()
-    }
-  }, [projectsExpanded, showLabels])
-
   // Session stats
   const { messages } = useMessageStore()
   const stats = useSessionStats(contextLimit)
@@ -320,6 +309,7 @@ export function SidePanel({
 
   // 异步拉取不在 lookup 中的 active/notification/selected session
   useEffect(() => {
+    const notificationSessionIds = new Set(notifications.map(n => n.sessionId))
     const allNeeded = [
       ...busySessions.map(e => ({ sessionId: e.sessionId, directory: e.directory })),
       ...notifications.map(e => ({ sessionId: e.sessionId, directory: e.directory })),
@@ -339,7 +329,9 @@ export function SidePanel({
             const session = await getSession(entry.sessionId, entry.directory)
             if (!cancelled) results[session.id] = session
           } catch {
-            /* ignore */
+            if (notificationSessionIds.has(entry.sessionId)) {
+              notificationStore.dismissBySessionId(entry.sessionId)
+            }
           }
         }),
       )
@@ -817,20 +809,6 @@ export function SidePanel({
     onToggleProjectSelection: toggleProjectSelection,
   }
 
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (!isExpanded) {
-      frameId = requestAnimationFrame(() => {
-        setProjectsExpanded(false)
-      })
-    }
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId)
-    }
-  }, [isExpanded])
-
   // 统一的结构，通过 CSS 控制显示/隐藏
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -873,86 +851,27 @@ export function SidePanel({
         </div>
       </div>
 
-      {/* ===== Navigation - 图标位置固定 ===== */}
-      <div className="flex flex-col gap-0.5 mx-2">
-        {/* New Chat - 图标始终在 padding-left: 6px 位置，收起时刚好居中 */}
-        <button
-          type="button"
-          onClick={onNewSession}
-          aria-label={t('sidebar.newChat')}
-          className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden"
-          style={{
-            width: showLabels ? '100%' : 32,
-            paddingLeft: 6,
-            paddingRight: 6,
-          }}
-          title={t('sidebar.newChat')}
-        >
-          <span className="size-5 flex items-center justify-center shrink-0">
-            <PlusIcon size={16} />
-          </span>
-          <span
-            className="ml-2 text-[length:var(--fs-base)] whitespace-nowrap transition-opacity duration-300"
-            style={{ opacity: showLabels ? 1 : 0 }}
-          >
-            {t('sidebar.newChat')}
-          </span>
-          <span
-            className="ml-auto text-[length:var(--fs-xxs)] text-text-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
-            style={{ opacity: showLabels ? undefined : 0 }}
-          >
-            {newChatShortcut}
-          </span>
-        </button>
-
-        {/* Project Selector - 只在展开时显示 */}
+      {/* ===== Project Area ===== */}
+      <div className="flex flex-col mx-2">
+        {/* Add Project - 只在展开时显示 */}
         {showLabels && (
           <button
-            ref={projectToggleRef}
             type="button"
-            onClick={() => setProjectsExpanded(!projectsExpanded)}
-            aria-expanded={projectsExpanded}
-            className={`h-8 flex items-center rounded-lg active:scale-[0.98] transition-all duration-300 overflow-hidden ${
-              projectsExpanded ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'
-            }`}
+            onClick={onAddProject}
+            className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 overflow-hidden"
             style={{ paddingLeft: 6, paddingRight: 6 }}
-            title={currentProjectLabel}
+            title={t('sidebar.addProject')}
           >
             <span className="size-5 flex items-center justify-center shrink-0">
-              <FolderIcon size={16} className={currentProject ? '' : 'text-text-400'} />
+              <PlusIcon size={16} className="text-text-400" />
             </span>
-            <div className="ml-2 min-w-0 flex-1 text-left text-[length:var(--fs-base)]">
-              <div
-                className="block overflow-hidden whitespace-nowrap text-left"
-                style={{
-                  WebkitMaskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                  maskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                }}
-              >
-                {currentProjectLabel}
-              </div>
-            </div>
-            <ChevronDownIcon
-              size={14}
-              className={`ml-auto text-text-400 transition-transform duration-200 shrink-0 ${projectsExpanded ? '' : '-rotate-90'}`}
-            />
+            <span className="ml-2 text-[length:var(--fs-base)] whitespace-nowrap">{t('sidebar.addProject')}</span>
           </button>
         )}
 
-        {/* Projects Dropdown */}
-        <div
-          ref={projectsDropdownRef}
-          className="overflow-hidden pb-px transition-all duration-300 ease-out"
-          style={{
-            maxHeight: showLabels && projectsExpanded ? 304 : 0,
-            opacity: showLabels && projectsExpanded ? 1 : 0,
-            marginTop: showLabels && projectsExpanded ? 4 : 0,
-            visibility: showLabels && projectsExpanded ? 'visible' : 'hidden',
-            pointerEvents: showLabels && projectsExpanded ? 'auto' : 'none',
-          }}
-          aria-hidden={!showLabels || !projectsExpanded}
-        >
-          <div className="rounded-lg border border-border-200/60 glass-alt shadow-sm overflow-hidden">
+        {/* Projects List */}
+        {showLabels && (
+          <div className="rounded-lg border border-border-200/60 glass-alt shadow-sm overflow-hidden mt-1">
             <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
               {projects.map(project => {
                 const isActive = currentProject?.id === project.id
@@ -1020,19 +939,8 @@ export function SidePanel({
                 )
               })}
             </div>
-            <div className="relative p-1 pt-1.5">
-              <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-border-200/30" />
-              <button
-                type="button"
-                onClick={onAddProject}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
-              >
-                <PlusIcon size={14} />
-                {t('sidebar.addProject')}
-              </button>
-            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ===== Main Content ===== */}
@@ -1043,6 +951,27 @@ export function SidePanel({
           visibility: showLabels ? 'visible' : 'hidden',
         }}
       >
+        {/* New Chat */}
+        <div className="px-3 pt-1.5 pb-1">
+          <button
+            type="button"
+            onClick={onNewSession}
+            aria-label={t('sidebar.newChat')}
+            className="h-8 w-full flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden px-2"
+            title={t('sidebar.newChat')}
+          >
+            <span className="size-5 flex items-center justify-center shrink-0">
+              <PlusIcon size={16} />
+            </span>
+            <span className="ml-2 text-[length:var(--fs-base)] whitespace-nowrap flex-1 text-left">
+              {t('sidebar.newChat')}
+            </span>
+            <span className="text-[length:var(--fs-xxs)] text-text-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              {newChatShortcut}
+            </span>
+          </button>
+        </div>
+
         {/* Search */}
         <div className="px-3 pt-1.5 pb-2">
           <div className="relative group">

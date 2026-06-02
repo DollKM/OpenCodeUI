@@ -304,11 +304,6 @@ export function Header({
             title={t('header.skills')}
           >
             <TeachIcon size={18} />
-            {skillUsageTotal > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-3.5 h-3.5 px-1 rounded-full bg-accent-main-100 text-oncolor-100 text-[9px] font-medium leading-none">
-                {skillUsageTotal > 99 ? '99+' : skillUsageTotal}
-              </span>
-            )}
           </IconButton>
 
           <IconButton
