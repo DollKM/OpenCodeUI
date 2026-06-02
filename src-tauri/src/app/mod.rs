@@ -9,7 +9,6 @@ mod dir_state;
 mod service;
 
 use bridge::BridgeState;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
 #[cfg(windows)]
@@ -76,25 +75,6 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, ta
 }
 
 #[cfg(not(target_os = "android"))]
-fn create_hidden_content_window(
-    app: &tauri::AppHandle,
-    label: &str,
-) -> Result<tauri::WebviewWindow, tauri::Error> {
-    let builder = configure_desktop_window_builder(tauri::WebviewWindowBuilder::new(
-        app,
-        label,
-        tauri::WebviewUrl::App("index.html".into()),
-    ))
-    .title("OpenCode")
-    .inner_size(800.0, 600.0);
-
-    #[cfg(windows)]
-    let builder = builder.disable_drag_drop_handler();
-
-    builder.visible(false).build()
-}
-
-#[cfg(not(target_os = "android"))]
 fn finish_desktop_window_setup(window: &tauri::WebviewWindow) {
     #[cfg(windows)]
     let _ = window.create_overlay_titlebar();
@@ -108,35 +88,6 @@ pub(crate) fn mark_window_ready<R: tauri::Runtime>(
     let _ = window.set_focus();
 
     Ok(())
-}
-
-/// 创建新窗口，可选地关联一个目录（多窗口支持）
-#[cfg(not(target_os = "android"))]
-pub(crate) fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
-    static WIN_COUNTER: AtomicU64 = AtomicU64::new(1);
-    let label = format!("win-{}", WIN_COUNTER.fetch_add(1, Ordering::SeqCst));
-
-    if let Some(ref dir) = directory {
-        if let Some(state) = app.try_state::<OpenDirectoryState>() {
-            state
-                .pending()
-                .pin()
-                .insert(label.clone(), Arc::from(dir.clone()));
-        }
-    }
-
-    match create_hidden_content_window(app, &label) {
-        Ok(window) => {
-            finish_desktop_window_setup(&window);
-
-            log::info!(
-                "Created new window '{}' for directory: {:?}",
-                label,
-                directory
-            )
-        }
-        Err(e) => log::error!("Failed to create new window: {}", e),
-    }
 }
 
 #[cfg(not(target_os = "android"))]
@@ -154,6 +105,72 @@ fn configure_desktop_window_builder<'a, R: tauri::Runtime, M: tauri::Manager<R>>
     window_builder
 }
 
+/// 把目录路径传递给 main 窗口（通过 pending state + emit 事件）
+#[cfg(not(target_os = "android"))]
+fn deliver_directory_to_main(app: &tauri::AppHandle, dir: String) {
+    if let Some(state) = app.try_state::<OpenDirectoryState>() {
+        let pending = state.pending().pin();
+        // 如果 main 还没取走旧的 pending 目录，就覆盖它（最近一次右键生效）
+        pending.insert("main".to_string(), Arc::from(dir.clone()));
+    }
+    let _ = app.emit("open-directory", dir);
+}
+
+/// Windows: 注册右键菜单到 HKEY_CURRENT_USER
+#[cfg(windows)]
+fn register_context_menu(exe_path: &str) {
+    use std::process::Command;
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let escaped_path = format!("\"{}\"", exe_path);
+
+    // Directory\shell + Directory\Background\shell
+    let reg_script = format!(
+        r#"
+[HKEY_CURRENT_USER\Software\Classes\Directory\shell\OpenCode]
+@="用 OpenCode 打开"
+"Icon"="{0},0"
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\shell\OpenCode\command]
+@="{0} \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\OpenCode]
+@="用 OpenCode 打开"
+"Icon"="{0},0"
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\OpenCode\command]
+@="{0} \"%V\""
+"#,
+        escaped_path
+    );
+
+    let temp_dir = std::env::temp_dir();
+    let reg_file = temp_dir.join("opencode_context_menu.reg");
+
+    if let Err(e) = std::fs::write(&reg_file, reg_script.as_bytes()) {
+        log::error!("Failed to write registry script: {}", e);
+        return;
+    }
+
+    let result = Command::new("regedit.exe")
+        .args(["/s", reg_file.to_string_lossy().as_ref()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+
+    match result {
+        Ok(_) => log::info!("Context menu registered successfully"),
+        Err(e) => log::error!("Failed to register context menu: {}", e),
+    }
+}
+
+#[cfg(windows)]
+fn get_current_exe_path() -> Option<String> {
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
 pub fn run() {
     let builder = tauri::Builder::default().manage(BridgeState::default());
 
@@ -166,10 +183,16 @@ pub fn run() {
         builder
             .manage(OpenDirectoryState::default())
             .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-                // 始终新建窗口（类似 VSCode：双击图标 = 新窗口）
                 let dir = extract_directory_from_args(&args);
-                log::info!("Single-instance: opening new window, directory: {:?}", dir);
-                create_new_window(app, dir);
+                log::info!("Single-instance: directory from new launch: {:?}", dir);
+                if let Some(dir) = dir {
+                    // 单窗口模式：将目录传递给已有 main 窗口
+                    if let Some(main_window) = app.get_webview_window("main") {
+                        let _ = main_window.set_focus();
+                        let _ = main_window.show();
+                    }
+                    deliver_directory_to_main(app, dir);
+                }
             }));
 
     let builder = builder
@@ -206,12 +229,15 @@ pub fn run() {
                 let args: Vec<String> = std::env::args().collect();
                 if let Some(dir) = extract_directory_from_args(&args) {
                     log::info!("CLI directory argument: {}", dir);
-                    if let Some(state) = app.try_state::<OpenDirectoryState>() {
-                        state
-                            .pending()
-                            .pin()
-                            .insert("main".to_string(), Arc::from(dir));
-                    }
+                    deliver_directory_to_main(app.handle(), dir);
+                }
+            }
+
+            // Windows: 注册右键菜单
+            #[cfg(windows)]
+            {
+                if let Some(exe_path) = get_current_exe_path() {
+                    register_context_menu(&exe_path);
                 }
             }
 
@@ -225,18 +251,14 @@ pub fn run() {
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
-                    // 只在最后一个窗口关闭时询问是否停止服务
-                    let is_last = window.app_handle().webview_windows().len() <= 1;
-                    if is_last {
-                        let state = window.state::<service::ServiceState>();
-                        if state.we_started.load(Ordering::SeqCst) {
-                            api.prevent_close();
-                            let _ = window.emit("close-requested", ());
-                        }
+                    // 单窗口模式：关闭即最后一个窗口
+                    let state = window.state::<service::ServiceState>();
+                    if state.we_started.load(std::sync::atomic::Ordering::SeqCst) {
+                        api.prevent_close();
+                        let _ = window.emit("close-requested", ());
                     }
                 }
                 tauri::WindowEvent::Destroyed => {
-                    // 窗口销毁时清理该窗口的所有桥接连接
                     let state = window.state::<BridgeState>();
                     state.disconnect_window(window.label());
                 }
@@ -248,7 +270,6 @@ pub fn run() {
             commands::bridge::bridge_send,
             commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
-            commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,
             commands::opencode::start_opencode_service,
@@ -278,20 +299,8 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     if path.is_dir() {
                         let dir = path.to_string_lossy().to_string();
-                            log::info!("macOS Opened directory: {}", dir);
-
-                            // 如果只有 main 窗口且它还没消费目录，说明是冷启动，设给 main
-                            // 否则新建窗口
-                            if let Some(state) = _app_handle.try_state::<OpenDirectoryState>() {
-                                let pending = state.pending().pin();
-                                let win_count = _app_handle.webview_windows().len();
-                                if win_count <= 1 && !pending.contains_key("main") {
-                                    pending.insert("main".to_string(), Arc::from(dir.clone()));
-                                    let _ = _app_handle.emit("open-directory", dir);
-                            } else {
-                                create_new_window(_app_handle, Some(dir));
-                            }
-                        }
+                        log::info!("macOS Opened directory: {}", dir);
+                        deliver_directory_to_main(_app_handle, dir);
                     }
                 }
             }
