@@ -67,6 +67,15 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
       skill.description.toLowerCase().includes(filter.toLowerCase()),
   )
 
+  // Sort by usage descending, preserve original order for ties
+  const originalOrder = new Map(skills.map((s, i) => [s.name, i]))
+  const sortedSkills = [...filteredSkills].sort((a, b) => {
+    const usageA = skillUsage[a.name] ?? 0
+    const usageB = skillUsage[b.name] ?? 0
+    if (usageB !== usageA) return usageB - usageA
+    return (originalOrder.get(a.name) ?? 0) - (originalOrder.get(b.name) ?? 0)
+  })
+
   return (
     <div className="flex flex-col h-full bg-bg-100">
       {/* Header */}
@@ -132,20 +141,17 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
           </div>
         ) : (
           <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between px-3 py-1 shrink-0">
-              <span className="text-[length:var(--fs-xs)] text-text-400">
-                {t('skillPanel.usageCount', { count: skillUsageStore.getTotalUsage() })}
-              </span>
+            <div className="flex items-center justify-end px-3 py-1 shrink-0">
               <button
                 type="button"
                 onClick={() => skillUsageStore.clearAll()}
-                className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 hover:bg-danger-100/10 px-1.5 py-0.5 rounded transition-colors"
+                className="text-[length:var(--fs-xs)] px-2 py-1 rounded-md bg-danger-100/10 text-danger-100 hover:bg-danger-100 hover:text-bg-000 transition-colors"
               >
                 {t('skillPanel.clearUsage')}
               </button>
             </div>
             <div className="flex-1 overflow-auto p-1">
-              {filteredSkills.map(skill => (
+              {sortedSkills.map(skill => (
                 <SkillItem key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} />
               ))}
             </div>

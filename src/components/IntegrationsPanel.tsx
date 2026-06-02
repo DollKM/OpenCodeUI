@@ -370,14 +370,11 @@ export const IntegrationsPanel = memo(function IntegrationsPanel({ isResizing: _
                     <SectionEmpty message={t('skillPanel.noSkills')} />
                   ) : (
                     <>
-                      <div className="flex items-center justify-between mb-1 px-2">
-                        <span className="text-[length:var(--fs-xs)] text-text-400">
-                          {t('skillPanel.usageCount', { count: skillUsageStore.getTotalUsage() })}
-                        </span>
+                      <div className="flex items-center justify-end mb-1 px-2">
                         <button
                           type="button"
                           onClick={() => skillUsageStore.clearAll()}
-                          className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 hover:bg-danger-100/10 px-1.5 py-0.5 rounded transition-colors"
+                          className="text-[length:var(--fs-xs)] px-2 py-1 rounded-md bg-danger-100/10 text-danger-100 hover:bg-danger-100 hover:text-bg-000 transition-colors"
                         >
                           {t('skillPanel.clearUsage')}
                         </button>
@@ -388,6 +385,12 @@ export const IntegrationsPanel = memo(function IntegrationsPanel({ isResizing: _
                             s.name.toLowerCase().includes(skillFilter.toLowerCase()) ||
                             s.description.toLowerCase().includes(skillFilter.toLowerCase()),
                         )
+                        .sort((a, b) => {
+                          const usageA = skillUsage[a.name] ?? 0
+                          const usageB = skillUsage[b.name] ?? 0
+                          if (usageB !== usageA) return usageB - usageA
+                          return skills.indexOf(a) - skills.indexOf(b)
+                        })
                         .map(skill => (
                           <SkillRow key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} />
                         ))}
