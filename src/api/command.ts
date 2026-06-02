@@ -83,6 +83,7 @@ export async function executeCommand(
   command: string,
   args: string = '',
   directory?: string,
+  model?: { providerID: string; modelID: string },
 ): Promise<unknown> {
   const sdk = getSDKClient()
   return unwrap(
@@ -91,6 +92,7 @@ export async function executeCommand(
       directory: formatPathForApi(directory),
       command,
       arguments: args,
+      model: model ? `${model.providerID}/${model.modelID}` : undefined,
     }),
   )
 }

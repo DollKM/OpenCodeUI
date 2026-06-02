@@ -144,6 +144,8 @@ if (isNativeTauri) {
 
 // 全局错误处理 - 防止未捕获错误导致页面刷新
 window.addEventListener('error', event => {
+  // event.error 为 null 说明是资源加载失败（img/script/font 等），非程序错误，忽略
+  if (event.error === null) return
   globalErrorHandler('uncaught error', event.error)
   event.preventDefault()
 })

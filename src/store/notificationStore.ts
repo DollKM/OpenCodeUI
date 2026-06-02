@@ -220,6 +220,14 @@ class NotificationStore {
     this.notify()
   }
 
+  dismissBySessionId(sessionId: string) {
+    const filtered = this.state.notifications.filter(n => n.sessionId !== sessionId)
+    if (filtered.length === this.state.notifications.length) return
+    this.state = { ...this.state, notifications: filtered }
+    this.persist()
+    this.notify()
+  }
+
   clearAll() {
     this.state = { ...this.state, notifications: [] }
     this.persist()
