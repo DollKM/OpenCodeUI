@@ -13,7 +13,7 @@ import {
 } from './Icons'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
-import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
+import { getDesktopPlatform, usesCustomDesktopTitlebar } from '../utils/tauri'
 import { useUpdateStore, hasUpdateAvailable } from '../store/updateStore'
 
 /* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
