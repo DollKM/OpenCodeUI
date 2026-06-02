@@ -1,10 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CloseIcon, SearchIcon } from '../../../components/Icons'
 import { useModels } from '../../../hooks'
 import { modelVisibilityStore, useHiddenModelKeys } from '../../../store'
-import { groupModelsByProvider, getModelKey } from '../../../utils/modelUtils'
-import { SettingsSection, Toggle } from './SettingsUI'
+import {
+  groupModelsByProvider,
+  getModelKey,
+  parseModelKey,
+  getCommitModel,
+  saveCommitModel,
+  clearCommitModel,
+} from '../../../utils/modelUtils'
+import { SettingsSection, Toggle, Select } from './SettingsUI'
 
 function formatContext(limit: number): string {
   if (!limit) return ''
@@ -19,6 +26,32 @@ export function ModelsSettings() {
   const hiddenModelKeys = useHiddenModelKeys()
   const [query, setQuery] = useState('')
   const hiddenModelKeySet = useMemo(() => new Set(hiddenModelKeys), [hiddenModelKeys])
+
+  const [commitModelKey, setCommitModelKey] = useState<string>(() => getCommitModel()?.modelKey ?? '')
+  const prevHiddenRef = useRef(hiddenModelKeySet)
+  useEffect(() => {
+    const prevHidden = prevHiddenRef.current
+    prevHiddenRef.current = hiddenModelKeySet
+    if (commitModelKey && !prevHidden.has(commitModelKey) && hiddenModelKeySet.has(commitModelKey)) {
+      clearCommitModel()
+      setCommitModelKey('')
+    }
+  })
+  const handleCommitModelChange = useCallback((value: string) => {
+    if (!value) {
+      clearCommitModel()
+      setCommitModelKey('')
+      return
+    }
+    const parsed = parseModelKey(value)
+    if (!parsed) return
+    saveCommitModel({ modelKey: value, providerId: parsed.providerId, modelId: parsed.modelId })
+    setCommitModelKey(value)
+  }, [])
+  const enabledModels = useMemo(
+    () => models.filter(m => !hiddenModelKeySet.has(getModelKey(m))),
+    [models, hiddenModelKeySet],
+  )
 
   const visibleCount = useMemo(
     () => models.reduce((count, model) => (hiddenModelKeySet.has(getModelKey(model)) ? count : count + 1), 0),
@@ -43,6 +76,19 @@ export function ModelsSettings() {
 
   return (
     <div>
+      <SettingsSection title={t('models.commitModelTitle')}>
+        <p className="text-[length:var(--fs-sm)] text-text-400 leading-relaxed">{t('models.commitModelDesc')}</p>
+        <Select
+          value={commitModelKey}
+          onChange={handleCommitModelChange}
+          placeholder="—"
+          options={enabledModels.map(model => ({
+            value: getModelKey(model),
+            label: model.name,
+          }))}
+        />
+      </SettingsSection>
+
       <SettingsSection title={t('models.visibility')}>
         <p className="text-[length:var(--fs-sm)] text-text-400 leading-relaxed">{t('models.visibilityDesc')}</p>
 

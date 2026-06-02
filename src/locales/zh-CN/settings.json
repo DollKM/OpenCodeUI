@@ -139,7 +139,9 @@
     "loading": "正在加载模型...",
     "empty": "当前服务器没有可用模型",
     "noResults": "没有匹配当前搜索的模型",
-    "providerCount": "{{count}} 个模型"
+    "providerCount": "{{count}} 个模型",
+    "commitModelTitle": "Git 提交模型",
+    "commitModelDesc": "选择用于辅助 git 提交的模型"
   },
   "appearance": {
     "themePresets": "主题预设",

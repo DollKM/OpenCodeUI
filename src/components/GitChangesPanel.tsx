@@ -5,7 +5,7 @@
 // 不依赖 sessionId，没有活跃会话也能显示变更内容
 // ============================================
 
-import { memo, useState, useEffect, useCallback, useRef, useMemo, useId } from 'react'
+import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RetryIcon, ChevronRightIcon, MaximizeIcon, SendIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
@@ -18,17 +18,15 @@ import { sendMessageAsync } from '../api/message'
 import type { ApiProject, FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
-import { getModelKey, findModelByKey, getSessionModelSelection, saveSessionModelSelection } from '../utils/modelUtils'
+import { findModelByKey, getCommitModel } from '../utils/modelUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
-import { DropdownMenu } from './ui'
 import { useModels } from '../hooks/useModels'
 import { useSessionNavigation } from '../contexts/SessionNavigationContext'
 
 const MIN_LIST_HEIGHT = 80
 const MIN_PREVIEW_HEIGHT = 120
-const DIRECTORY_MODEL_KEY_PREFIX = 'git-changes-dir:'
 
 function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activeFile: string | null) {
   const availableFiles = new Set(diffs.map(diff => diff.file))
@@ -78,52 +76,24 @@ export const GitChangesPanel = memo(function GitChangesPanel({
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
   const [listMode, setListMode] = useState<'flat' | 'tree'>('flat')
 
-  // 模型选择
+  // 模型选择 — 从设置-模型中读取全局配置
   const { models: allModels } = useModels()
-  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const modelMenuTriggerRef = useRef<HTMLButtonElement>(null)
-  const modelMenuRef = useRef<HTMLDivElement>(null)
-  const modelMenuId = useId()
   const { navigateToSession } = useSessionNavigation()
   const [committing, setCommitting] = useState(false)
+  const [, forceRender] = useState(0)
 
-  const visibleModels = useMemo(() => allModels, [allModels])
-  const selectedModel = useMemo(
-    () => (selectedModelKey ? findModelByKey(visibleModels, selectedModelKey) : visibleModels[0]),
-    [selectedModelKey, visibleModels],
-  )
-
-  // 追踪 directory 变化以重置模型选择
-  const prevDirectoryRef = useRef<string | undefined>(directory)
-
-  // 初始化默认模型（按目录保存偏好）
+  // 窗口聚焦时重新读取提交模型（设置页面更改后生效）
   useEffect(() => {
-    if (visibleModels.length === 0) return
+    const onFocus = () => forceRender(v => v + 1)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
 
-    const directoryChanged = prevDirectoryRef.current !== directory
-    prevDirectoryRef.current = directory
-
-    if (!directoryChanged && selectedModelKey) return
-
-    const storageKey = DIRECTORY_MODEL_KEY_PREFIX + (directory ?? 'default')
-    const saved = getSessionModelSelection(storageKey)
-    if (saved && findModelByKey(visibleModels, saved.modelKey)) {
-      setSelectedModelKey(saved.modelKey)
-    } else {
-      setSelectedModelKey(getModelKey(visibleModels[0]))
-    }
-  }, [visibleModels, selectedModelKey, directory])
-
-  const handleModelSelect = useCallback(
-    (key: string) => {
-      setSelectedModelKey(key)
-      const storageKey = DIRECTORY_MODEL_KEY_PREFIX + (directory ?? 'default')
-      saveSessionModelSelection(storageKey, key, undefined)
-      setModelMenuOpen(false)
-    },
-    [directory],
-  )
+  const commitModel = (() => {
+    const saved = getCommitModel()
+    if (!saved || !allModels.length) return null
+    return findModelByKey(allModels, saved.modelKey) ?? null
+  })()
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [openDiffFiles, setOpenDiffFiles] = useState<string[]>([])
@@ -218,7 +188,6 @@ export const GitChangesPanel = memo(function GitChangesPanel({
     setError(null)
     setOpenDiffFiles([])
     setSelectedFile(null)
-    setSelectedModelKey(null)
     setMountedPreviewFiles(new Set())
     setExpandedDirs(new Set())
     resetSplitHeight()
@@ -408,65 +377,26 @@ export const GitChangesPanel = memo(function GitChangesPanel({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            <button
-              ref={modelMenuTriggerRef}
-              type="button"
-              onClick={() => setModelMenuOpen(open => !open)}
-              aria-label={t('sessionChanges.selectModel')}
-              aria-haspopup="menu"
-              aria-expanded={modelMenuOpen}
-              aria-controls={modelMenuOpen ? modelMenuId : undefined}
-              title={selectedModel?.name || t('sessionChanges.selectModel')}
-              className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[length:var(--fs-xxs)] transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            >
-              <span className="truncate max-w-[80px]">{selectedModel?.name || 'Model'}</span>
-            </button>
-
-            <DropdownMenu
-              triggerRef={modelMenuTriggerRef}
-              isOpen={modelMenuOpen}
-              position="bottom"
-              align="left"
-              minWidth="140px"
-              maxWidth="min(200px, calc(100vw - 24px))"
-              constrainToRef={containerRef}
-              className="!rounded-lg !p-1"
-            >
-              <div
-                id={modelMenuId}
-                ref={modelMenuRef}
-                role="menu"
-                aria-label={t('sessionChanges.selectModel')}
-                className="space-y-px max-h-[300px] overflow-y-auto"
+            {commitModel ? (
+              <span className="text-[length:var(--fs-xxs)] text-text-400 truncate max-w-[120px]">
+                {t('sessionChanges.commitModelLabel', { modelName: commitModel.name })}
+              </span>
+            ) : (
+              <span
+                className="text-[length:var(--fs-xxs)] text-warning-100/70"
+                title={t('sessionChanges.commitModelNotSetHint')}
               >
-                {visibleModels.map(model => {
-                  const key = getModelKey(model)
-                  const isSelected = key === (selectedModelKey || getModelKey(visibleModels[0]))
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isSelected}
-                      onClick={() => handleModelSelect(key)}
-                      className={`group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-xs)] transition-colors ${
-                        isSelected
-                          ? 'bg-bg-200/70 text-text-100 font-medium'
-                          : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100'
-                      }`}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </DropdownMenu>
+                {t('sessionChanges.commitModelNotSet')}
+              </span>
+            )}
 
             <button
               type="button"
-              disabled={committing || !selectedModel || diffs.length === 0}
+              disabled={committing || !commitModel || diffs.length === 0}
               onClick={async () => {
-                if (!selectedModel) return
+                const saved = getCommitModel()
+                const model = saved ? findModelByKey(allModels, saved.modelKey) ?? null : null
+                if (!model) return
                 setCommitting(true)
                 try {
                   const newSession = await createSession({
@@ -478,8 +408,8 @@ export const GitChangesPanel = memo(function GitChangesPanel({
                     text: '按修改分批提交git',
                     attachments: [],
                     model: {
-                      providerID: selectedModel.providerId,
-                      modelID: selectedModel.id,
+                      providerID: model.providerId,
+                      modelID: model.id,
                     },
                     directory: directory || undefined,
                   })

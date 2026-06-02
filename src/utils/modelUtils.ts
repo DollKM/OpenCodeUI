@@ -182,6 +182,43 @@ export function saveSessionModelSelection(sessionId: string, modelKey: string, v
 }
 
 // ============================================
+// Git 提交模型存储
+// ============================================
+
+const COMMIT_MODEL_STORAGE_KEY = 'global-commit-model'
+
+export interface CommitModelSelection {
+  modelKey: string
+  providerId: string
+  modelId: string
+}
+
+export function getCommitModel(): CommitModelSelection | null {
+  try {
+    const stored = serverStorage.get(COMMIT_MODEL_STORAGE_KEY)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveCommitModel(selection: CommitModelSelection): void {
+  try {
+    serverStorage.set(COMMIT_MODEL_STORAGE_KEY, JSON.stringify(selection))
+  } catch (e) {
+    console.warn('Failed to save commit model:', e)
+  }
+}
+
+export function clearCommitModel(): void {
+  try {
+    serverStorage.remove(COMMIT_MODEL_STORAGE_KEY)
+  } catch (e) {
+    console.warn('Failed to clear commit model:', e)
+  }
+}
+
+// ============================================
 // 模型排序
 // ============================================
 

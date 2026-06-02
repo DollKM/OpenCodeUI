@@ -1,4 +1,6 @@
+import { useState, useEffect, useRef } from 'react'
 import type React from 'react'
+import { ChevronDownIcon } from '../../../components/Icons'
 
 // ============================================
 // Shared Settings UI Primitives
@@ -148,6 +150,81 @@ export function SettingsSection({ title, children }: { title: string; children: 
 /**
  * Settings card — 保留，用于需要视觉隔离的独立功能块（ServersSettings 等）。
  */
+/**
+ * Custom Select — 完全可主题化的下拉选择器。
+ * 使用 button + dropdown 模式，避免原生 <select> <option> 无法在暗色主题下正确渲染的问题。
+ */
+export interface SelectOption {
+  value: string
+  label: string
+}
+
+export function Select({
+  value,
+  onChange,
+  options,
+  placeholder = '',
+}: {
+  value: string
+  onChange: (value: string) => void
+  options: SelectOption[]
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const selectedLabel = options.find(o => o.value === value)?.label
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full rounded-lg border border-border-200/55 bg-bg-050/55 px-3 py-2 text-[length:var(--fs-base)] text-left flex items-center justify-between gap-2 focus-visible:ring-1 focus-visible:ring-accent-main-100 transition-colors"
+      >
+        <span className={value ? 'text-text-100' : 'text-text-400'}>{selectedLabel || placeholder}</span>
+        <ChevronDownIcon
+          size={12}
+          className={`shrink-0 text-text-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border border-border-200/60 bg-bg-000 shadow-lg overflow-hidden">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onChange(opt.value)
+                setOpen(false)
+              }}
+              className={`w-full text-left px-3 py-2 text-[length:var(--fs-base)] transition-colors ${
+                opt.value === value
+                  ? 'bg-accent-main-100/10 text-accent-main-100 font-medium'
+                  : 'text-text-100 hover:bg-bg-100/50'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SettingsCard({
   title,
   description,

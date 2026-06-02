@@ -80,7 +80,9 @@
     "treeView": "Tree view",
     "unified": "Unified",
     "split": "Split",
-    "selectModel": "Select model",
+    "commitModelLabel": "Using {{modelName}} for commits",
+    "commitModelNotSet": "Not set",
+    "commitModelNotSetHint": "Go to Settings > Models to select a commit model",
     "batchCommit": "Batch commit by changes"
   },
   "mcpPanel": {
@@ -112,7 +114,8 @@
     "filterPlaceholder": "Filter skills...",
     "loadingSkills": "Loading skills...",
     "failedToLoad": "Failed to load skills",
-    "noSkills": "No skills found"
+    "noSkills": "No skills found",
+    "clearUsage": "Clear usage"
   },
   "integrationsPanel": {
     "title": "Integrations",

@@ -79,7 +79,9 @@
     "treeView": "树形视图",
     "unified": "统一",
     "split": "分栏",
-    "selectModel": "选择模型",
+    "commitModelLabel": "使用 {{modelName}} 辅助提交",
+    "commitModelNotSet": "未设置",
+    "commitModelNotSetHint": "前往设置-模型选择提交模型",
     "batchCommit": "按修改分批提交"
   },
   "mcpPanel": {

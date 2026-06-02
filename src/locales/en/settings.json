@@ -139,7 +139,9 @@
     "loading": "Loading models...",
     "empty": "No models available on the current server",
     "noResults": "No models match the current search",
-    "providerCount": "{{count}} models"
+    "providerCount": "{{count}} models",
+    "commitModelTitle": "Git Commit Model",
+    "commitModelDesc": "Select the model used for git commit assistance"
   },
   "appearance": {
     "themePresets": "Theme Presets",
