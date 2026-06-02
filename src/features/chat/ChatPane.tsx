@@ -121,7 +121,6 @@ export const ChatPane = memo(function ChatPane({
   isPaneFullscreen = false,
   onOpenSidebar,
   showSidebarButton = false,
-  onSplitPane,
   onTogglePaneFullscreen,
   navigatePaneToSession,
   navigatePaneHome,
