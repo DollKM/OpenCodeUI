@@ -3,7 +3,7 @@
 // 在一个面板中展示当前所有集成（MCP 服务器、Skills、工具/插件）
 // ============================================
 
-import { memo, useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PlugIcon,
@@ -35,6 +35,7 @@ import type { Skill } from '../types/api/skill'
 import { subscribeToEvents } from '../api/events'
 import { useDirectory } from '../hooks'
 import { apiErrorHandler } from '../utils'
+import { skillUsageStore } from '../store/skillUsageStore'
 
 // ============================================
 // Types
@@ -67,6 +68,11 @@ export const IntegrationsPanel = memo(function IntegrationsPanel({ isResizing: _
   const [skillsLoading, setSkillsLoading] = useState(true)
   const [skillsError, setSkillsError] = useState<string | null>(null)
   const [skillFilter, setSkillFilter] = useState('')
+  const skillUsage = useSyncExternalStore(
+    useCallback(cb => skillUsageStore.subscribe(cb), []),
+    useCallback(() => skillUsageStore.getUsage(), []),
+    useCallback(() => skillUsageStore.getUsage(), []),
+)
 
   // Tools
   const [tools, setTools] = useState<string[]>([])
@@ -106,6 +112,7 @@ export const IntegrationsPanel = memo(function IntegrationsPanel({ isResizing: _
     try {
       const data = await getSkills(currentDirectory)
       setSkills(data)
+      skillUsageStore.registerSkillNames(data.map(s => s.name))
     } catch (err) {
       apiErrorHandler('load skills', err)
       setSkillsError(t('skillPanel.failedToLoad'))
@@ -362,13 +369,29 @@ export const IntegrationsPanel = memo(function IntegrationsPanel({ isResizing: _
                   {skills.length === 0 ? (
                     <SectionEmpty message={t('skillPanel.noSkills')} />
                   ) : (
-                    skills
-                      .filter(
-                        s =>
-                          s.name.toLowerCase().includes(skillFilter.toLowerCase()) ||
-                          s.description.toLowerCase().includes(skillFilter.toLowerCase()),
-                      )
-                      .map(skill => <SkillRow key={skill.name} skill={skill} />)
+                    <>
+                      <div className="flex items-center justify-between mb-1 px-2">
+                        <span className="text-[length:var(--fs-xs)] text-text-400">
+                          {t('skillPanel.usageCount', { count: skillUsageStore.getTotalUsage() })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => skillUsageStore.clearAll()}
+                          className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 hover:bg-danger-100/10 px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          {t('skillPanel.clearUsage')}
+                        </button>
+                      </div>
+                      {skills
+                        .filter(
+                          s =>
+                            s.name.toLowerCase().includes(skillFilter.toLowerCase()) ||
+                            s.description.toLowerCase().includes(skillFilter.toLowerCase()),
+                        )
+                        .map(skill => (
+                          <SkillRow key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} />
+                        ))}
+                    </>
                   )}
                 </>
               )}
@@ -519,7 +542,7 @@ const McpRow = memo(function McpRow({ name, status, actionLoading, onConnect, on
 // Skill Row
 // ============================================
 
-const SkillRow = memo(function SkillRow({ skill }: { skill: Skill }) {
+const SkillRow = memo(function SkillRow({ skill, usage }: { skill: Skill; usage: number }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -537,6 +560,11 @@ const SkillRow = memo(function SkillRow({ skill }: { skill: Skill }) {
           <div className="text-[length:var(--fs-sm)] text-text-100 truncate">{skill.name}</div>
           <div className="text-[length:var(--fs-xs)] text-text-400 truncate">{skill.description}</div>
         </div>
+        {usage > 0 && (
+          <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
+            {usage}
+          </span>
+        )}
       </button>
       {expanded && (
         <div className="ml-6 mr-2 mb-1 rounded-md border border-border-200/30 bg-bg-100/50 px-2 py-1.5">

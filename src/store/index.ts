@@ -97,3 +97,5 @@ export {
   importUpdateSettingsBackup,
 } from './updateStore'
 export type { UpdateRelease, UpdateSettingsBackup, UpdateState } from './updateStore'
+
+export { skillUsageStore } from './skillUsageStore'

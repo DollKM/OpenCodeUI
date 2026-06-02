@@ -13,6 +13,7 @@ import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '.
 import { activeSessionStore } from '../store/activeSessionStore'
 import { notificationStore } from '../store/notificationStore'
 import { soundStore } from '../store/soundStore'
+import { skillUsageStore } from '../store/skillUsageStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { subscribeToEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
 import { replyPermission } from '../api/permission'
@@ -386,8 +387,25 @@ export function useGlobalEvents(directories?: string[]) {
 
       onPartUpdated: (apiPart: ApiPart) => {
         if ('sessionID' in apiPart && 'messageID' in apiPart) {
-          messageStore.handlePartUpdated(apiPart as ApiPart & { sessionID: string; messageID: string })
-          scheduleScroll(apiPart.sessionID)
+          const part = apiPart as ApiPart & { sessionID: string; messageID: string }
+
+          messageStore.handlePartUpdated(part)
+          scheduleScroll(part.sessionID)
+
+          if (
+            part.type === 'tool' &&
+            part.tool === 'skill' &&
+            'state' in part &&
+            typeof part.state === 'object' &&
+            part.state &&
+            'input' in part.state &&
+            typeof part.state.input === 'object' &&
+            part.state.input &&
+            'name' in part.state.input &&
+            typeof part.state.input.name === 'string'
+          ) {
+            skillUsageStore.recordSkill(part.state.input.name)
+          }
         }
       },
 
