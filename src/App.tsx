@@ -23,6 +23,7 @@ import {
   usePaneController,
   usePaneControllers,
   usePaneLayout,
+  updateStore,
 } from './store'
 import {
   ChatViewportProvider,
@@ -90,6 +91,11 @@ function App() {
     void invoke('desktop_window_ready').catch(() => {
       // best effort only
     })
+  }, [])
+
+  useEffect(() => {
+    if (import.meta.env.DEV) return
+    void updateStore.checkForUpdates()
   }, [])
 
   useViewportHeight()
@@ -226,6 +232,9 @@ function App() {
   }, [])
   const openSettings = useCallback(() => {
     openSettingsTab('servers')
+  }, [openSettingsTab])
+  const openAboutSettings = useCallback(() => {
+    openSettingsTab('about')
   }, [openSettingsTab])
   const closeSettings = useCallback(() => setSettingsDialogOpen(false), [])
 
@@ -597,7 +606,7 @@ function App() {
 
             <RightPanel directory={focusedDirectory} sessionId={paneLayout.focusedSessionId} />
           </div>
-          <ToastContainer />
+          <ToastContainer onOpenAbout={openAboutSettings} />
         </div>
 
         <Suspense fallback={null}>

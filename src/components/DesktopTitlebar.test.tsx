@@ -2,9 +2,11 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopTitlebar } from './DesktopTitlebar'
 
-const { useThemeMock, getDesktopPlatformMock, usesCustomDesktopTitlebarMock } =
+const { useThemeMock, useUpdateStoreMock, hasUpdateAvailableMock, getDesktopPlatformMock, usesCustomDesktopTitlebarMock } =
   vi.hoisted(() => ({
     useThemeMock: vi.fn(() => ({ mode: 'dark', resolvedTheme: 'dark' })),
+    useUpdateStoreMock: vi.fn(() => ({})),
+    hasUpdateAvailableMock: vi.fn(() => false),
     getDesktopPlatformMock: vi.fn(() => 'windows'),
     usesCustomDesktopTitlebarMock: vi.fn(() => true),
   }))
@@ -15,6 +17,11 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../hooks/useTheme', () => ({
   useTheme: () => useThemeMock(),
+}))
+
+vi.mock('../store/updateStore', () => ({
+  useUpdateStore: () => useUpdateStoreMock(),
+  hasUpdateAvailable: () => hasUpdateAvailableMock(),
 }))
 
 vi.mock('../utils/tauri', () => ({

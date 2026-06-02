@@ -87,4 +87,13 @@ export type {
 export { followupQueueStore, useFollowupQueue } from './followupQueueStore'
 export type { QueuedFollowupDraft } from './followupQueueStore'
 
-export { compareVersions } from './updateStore'
+export {
+  updateStore,
+  useUpdateStore,
+  compareVersions,
+  hasUpdateAvailable,
+  shouldShowUpdateToast,
+  exportUpdateSettingsBackup,
+  importUpdateSettingsBackup,
+} from './updateStore'
+export type { UpdateRelease, UpdateSettingsBackup, UpdateState } from './updateStore'

@@ -6,18 +6,21 @@ import {
   exportServerSettingsBackup,
   exportServiceSettingsBackup,
   exportThemeBackup,
+  exportUpdateSettingsBackup,
   importLayoutBackup,
   importNotificationEventSettingsBackup,
   importNotificationPreferencesBackup,
   importServerSettingsBackup,
   importServiceSettingsBackup,
   importThemeBackup,
+  importUpdateSettingsBackup,
   type LayoutBackup,
   type NotificationEventSettingsBackup,
   type NotificationPreferencesBackup,
   type ServerSettingsBackup,
   type ServiceSettingsBackup,
   type ThemeBackup,
+  type UpdateSettingsBackup,
 } from '../store'
 import { exportKeybindingBackup, importKeybindingBackup, type KeybindingBackup } from '../store/keybindingStore'
 import { exportSoundBackup, importSoundBackup, type SoundBackup } from '../store/soundStore'
@@ -45,6 +48,7 @@ export interface SettingsBackupModules {
   keybindings: KeybindingBackup
   notifications: NotificationBackup
   sound: SoundBackup
+  update: UpdateSettingsBackup
 }
 
 export interface SettingsBackupFile {
@@ -101,6 +105,7 @@ function normalizeBackupFile(raw: unknown): SettingsBackupFile {
     'keybindings',
     'notifications',
     'sound',
+    'update',
   ]
 
   for (const id of requiredModules) {
@@ -139,6 +144,7 @@ export async function exportSettingsBackup(): Promise<{ fileName: string; data: 
       keybindings: exportKeybindingBackup(),
       notifications: exportNotificationBackup(),
       sound: await exportSoundBackup(),
+      update: exportUpdateSettingsBackup(),
     },
   }
 
@@ -168,6 +174,7 @@ export async function importSettingsBackup(file: File): Promise<void> {
   importKeybindingBackup(backup.modules.keybindings)
   importNotificationBackup(backup.modules.notifications)
   await importSoundBackup(backup.modules.sound)
+  importUpdateSettingsBackup(backup.modules.update)
 }
 
 export function previewBackupMeta(file: File): Promise<{ createdAt: string | null }> {
