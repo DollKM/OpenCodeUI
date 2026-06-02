@@ -4,7 +4,7 @@ import { diffLines } from 'diff'
 import { animate } from 'motion/mini'
 import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
-import { useDelayedRender } from '../../hooks'
+import { useDelayedRender, useModels } from '../../hooks'
 import { useTheme } from '../../hooks/useTheme'
 import {
   useInlineToolRequests,
@@ -427,7 +427,13 @@ const AssistantMessageView = memo(function AssistantMessageView({
   // agent / model（仅 assistant 消息）
   const assistantInfo = info.role === 'assistant' ? (info as AssistantMessageInfo) : null
   const agent = assistantInfo?.agent || undefined
-  const modelLabel = assistantInfo?.modelID || undefined
+  const { models } = useModels()
+  const modelLabel = useMemo(() => {
+    if (!assistantInfo?.modelID) return undefined
+    const provider = models.find(m => m.providerId === assistantInfo.providerID)
+    const providerName = provider?.providerName
+    return providerName ? `${providerName} / ${assistantInfo.modelID}` : assistantInfo.modelID
+  }, [assistantInfo?.modelID, assistantInfo?.providerID, models])
 
   const hasStepFinishPart = parts.some(part => part.type === 'step-finish')
   const showTurnDurationFooter =
