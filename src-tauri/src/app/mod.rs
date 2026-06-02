@@ -116,52 +116,56 @@ fn deliver_directory_to_main(app: &tauri::AppHandle, dir: String) {
     let _ = app.emit("open-directory", dir);
 }
 
-/// Windows: 注册右键菜单到 HKEY_CURRENT_USER
+/// Windows: 注册右键菜单到 HKEY_CURRENT_USER（使用 reg add 命令）
 #[cfg(windows)]
 fn register_context_menu(exe_path: &str) {
-    use std::process::Command;
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
 
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let escaped_path = format!("\"{}\"", exe_path);
 
-    // Directory\shell + Directory\Background\shell
-    let reg_script = format!(
-        r#"
-[HKEY_CURRENT_USER\Software\Classes\Directory\shell\OpenCode]
-@="用 OpenCode 打开"
-"Icon"="{0},0"
+    let menu_text = "用 OpenCode 打开";
+    let icon_value = format!("{},0", exe_path);
+    let cmd_template = format!("\"{}\" \"%1\"", exe_path);
+    let bg_cmd_template = format!("\"{}\" \"%V\"", exe_path);
+    let paths = [
+        r"HKCU\Software\Classes\Directory\shell\OpenCode",
+        r"HKCU\Software\Classes\Directory\Background\shell\OpenCode",
+    ];
 
-[HKEY_CURRENT_USER\Software\Classes\Directory\shell\OpenCode\command]
-@="{0} \"%1\""
+    for &base in &paths {
+        // (默认) = "用 OpenCode 打开"
+        let _ = Command::new("reg")
+            .args(["add", base, "/ve", "/d", menu_text, "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
 
-[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\OpenCode]
-@="用 OpenCode 打开"
-"Icon"="{0},0"
+        // Icon = "exe路径,0"
+        let _ = Command::new("reg")
+            .args(["add", base, "/v", "Icon", "/d", &icon_value, "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
 
-[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\OpenCode\command]
-@="{0} \"%V\""
-"#,
-        escaped_path
-    );
-
-    let temp_dir = std::env::temp_dir();
-    let reg_file = temp_dir.join("opencode_context_menu.reg");
-
-    if let Err(e) = std::fs::write(&reg_file, reg_script.as_bytes()) {
-        log::error!("Failed to write registry script: {}", e);
-        return;
+        // command\(默认) = "exe路径" "%1" (或 "%V" for Background)
+        let cmd_value = if base.contains("Background") {
+            &bg_cmd_template
+        } else {
+            &cmd_template
+        };
+        let cmd_key = format!(r"{}\command", base);
+        let _ = Command::new("reg")
+            .args(["add", &cmd_key, "/ve", "/d", cmd_value, "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
     }
 
-    let result = Command::new("regedit.exe")
-        .args(["/s", reg_file.to_string_lossy().as_ref()])
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn();
-
-    match result {
-        Ok(_) => log::info!("Context menu registered successfully"),
-        Err(e) => log::error!("Failed to register context menu: {}", e),
-    }
+    log::info!("Context menu registered");
 }
 
 #[cfg(windows)]
