@@ -225,6 +225,8 @@ function buildPromptParams(params: SendMessageParams): PromptParams {
     model,
     agent,
     variant,
+    ...(params.system !== undefined ? { system: params.system } : {}),
+    ...(params.tools !== undefined ? { tools: params.tools } : {}),
   }
 }
 

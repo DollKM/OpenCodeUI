@@ -56,6 +56,8 @@ export interface SendMessageParams {
     providerID: string
     modelID: string
   }
+  system?: string
+  tools?: Record<string, boolean>
   agent?: string
   variant?: string
   directory?: string
