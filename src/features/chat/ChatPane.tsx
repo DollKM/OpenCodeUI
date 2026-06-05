@@ -278,6 +278,9 @@ export const ChatPane = memo(function ChatPane({
     handleNextSession,
     handleCopyLastResponse,
     restoreAgentFromMessage,
+    pendingImageConfirm,
+    handleConfirmImageResult,
+    handleCancelImageRecognition,
   } = useChatSession({
     paneId,
     chatAreaRef,
@@ -849,6 +852,9 @@ export const ChatPane = memo(function ChatPane({
                 }
               : undefined
           }
+          pendingImageConfirm={pendingImageConfirm}
+          onConfirmImageResult={handleConfirmImageResult}
+          onCancelImageRecognition={handleCancelImageRecognition}
           collapsedQuestion={
             !inlineToolRequests &&
             pendingPermissionRequests.length === 0 &&
