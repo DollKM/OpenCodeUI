@@ -23,6 +23,7 @@ import { SessionNavigationContext } from '../../contexts/SessionNavigationContex
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
 import { messageStore, paneControllerStore, useHiddenModelKeys } from '../../store'
+import { useBusyCount } from '../../store'
 import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
 import { useTheme } from '../../hooks/useTheme'
@@ -127,6 +128,7 @@ export const ChatPane = memo(function ChatPane({
 }: ChatPaneProps) {
   const { t } = useTranslation(['chat', 'common'])
   const showCompactShell = displayMode === 'split' && !isPaneFullscreen
+  const busyCount = useBusyCount()
 
   // Read the outer (App-level) viewport BEFORE this component's own Provider shadows it.
   // When fullscreen we pass this through so children keep the real desktop viewport;
@@ -717,6 +719,27 @@ export const ChatPane = memo(function ChatPane({
               modelSelectorRef={modelSelectorRef}
             />
           </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes gradient-flow-slide {
+          0% { transform: translateX(-100%); }
+          3% { transform: translateX(-100%); }
+          70% { transform: translateX(200%); }
+          100% { transform: translateX(200%); }
+        }
+      `}</style>
+      {busyCount > 0 && (
+        <div className="absolute top-0 left-0 right-0 z-30 overflow-hidden pointer-events-none" style={{ top: 56, height: 4 }}>
+          <div
+            className="h-full"
+            style={{
+              width: '50%',
+              background: 'linear-gradient(90deg, transparent 0%, hsl(var(--accent-main-100)) 40%, hsl(var(--accent-main-100)) 100%)',
+              animation: 'gradient-flow-slide 4s ease-in-out infinite',
+            }}
+          />
         </div>
       )}
 

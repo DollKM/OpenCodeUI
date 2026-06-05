@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../../sessions'
 import { FolderRecentList } from './FolderRecentList'
@@ -810,9 +810,11 @@ export function SidePanel({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <style>{`
-        @keyframes dot-flow {
-          0%, 100% { opacity: 0.15; transform: scale(0.5); }
-          50% { opacity: 1; transform: scale(1); }
+        @keyframes gradient-flow-item {
+          0% { transform: translateX(-100%); }
+          5% { transform: translateX(-100%); }
+          80% { transform: translateX(200%); }
+          100% { transform: translateX(200%); }
         }
       `}</style>
       {/* ===== Header ===== */}
@@ -881,10 +883,23 @@ export function SidePanel({
                   <div
                     key={project.id}
                     onClick={() => handleSelectProject(project.id)}
-                    className={`group w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
+                    className={`group w-full relative overflow-hidden flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
                       isActive ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
                     }`}
                   >
+                    <div
+                      className="absolute inset-0 pointer-events-none overflow-hidden rounded-md transition-opacity duration-300"
+                      style={{ opacity: projectStatus === 'working' ? 1 : 0 }}
+                    >
+                      <div
+                        className="h-full"
+                        style={{
+                          width: '50%',
+                          background: 'linear-gradient(90deg, transparent 0%, hsl(var(--accent-main-100) / 0.3) 30%, hsl(var(--accent-main-100) / 0.35) 100%)',
+                          animation: 'gradient-flow-item 4s ease-in-out infinite',
+                        }}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={e => {
@@ -943,27 +958,6 @@ export function SidePanel({
           visibility: showLabels ? 'visible' : 'hidden',
         }}
       >
-        {/* New Chat */}
-        <div className="px-3 pt-1.5 pb-1">
-          <button
-            type="button"
-            onClick={onNewSession}
-            aria-label={t('sidebar.newChat')}
-            className="h-8 w-full flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden px-2"
-            title={t('sidebar.newChat')}
-          >
-            <span className="size-5 flex items-center justify-center shrink-0">
-              <PlusIcon size={16} />
-            </span>
-            <span className="ml-2 text-[length:var(--fs-base)] whitespace-nowrap flex-1 text-left">
-              {t('sidebar.newChat')}
-            </span>
-            <span className="text-[length:var(--fs-xxs)] text-text-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              {newChatShortcut}
-            </span>
-          </button>
-        </div>
-
         {/* Search */}
         <div className="px-3 pt-1.5 pb-2">
           <div className="relative group">
@@ -1263,28 +1257,4 @@ export function SidePanel({
   )
 }
 
-// ============================================
-// FlowingDots - 工作中状态点阵流动动画
-// ============================================
 
-const DOT_COUNT = 25
-const DOT_SIZE = 5
-
-const FlowingDots = memo(function FlowingDots() {
-  return (
-    <div className="flex items-center h-3 gap-[3px] ml-1">
-      {Array.from({ length: DOT_COUNT }, (_, i) => (
-        <span
-          key={i}
-          className="rounded-full bg-accent-main-100"
-          style={{
-            width: DOT_SIZE,
-            height: DOT_SIZE,
-            animation: 'dot-flow 1.2s ease-in-out infinite',
-            animationDelay: `${i * 0.1}s`,
-          }}
-        />
-      ))}
-    </div>
-  )
-})
