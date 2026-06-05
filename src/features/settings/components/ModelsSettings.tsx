@@ -52,10 +52,6 @@ export function ModelsSettings() {
     saveCommitModel({ modelKey: value, providerId: parsed.providerId, modelId: parsed.modelId })
     setCommitModelKey(value)
   }, [])
-  const imageCapableModels = useMemo(
-    () => enabledModels.filter(m => m.supportsImages),
-    [enabledModels],
-  )
   const handleImageRecogModelChange = useCallback((value: string) => {
     if (!value) {
       clearImageRecognitionModel()
@@ -70,6 +66,10 @@ export function ModelsSettings() {
   const enabledModels = useMemo(
     () => models.filter(m => !hiddenModelKeySet.has(getModelKey(m))),
     [models, hiddenModelKeySet],
+  )
+  const imageCapableModels = useMemo(
+    () => enabledModels.filter(m => m.supportsImages),
+    [enabledModels],
   )
 
   const visibleCount = useMemo(

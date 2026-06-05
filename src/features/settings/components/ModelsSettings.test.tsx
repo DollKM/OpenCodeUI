@@ -30,6 +30,17 @@ vi.mock('../../../utils/modelUtils', () => ({
       models,
     },
   ],
+  parseModelKey: (key: string) => {
+    const idx = key.indexOf(':')
+    if (idx === -1) return null
+    return { providerId: key.slice(0, idx), modelId: key.slice(idx + 1) }
+  },
+  getCommitModel: () => null,
+  saveCommitModel: () => {},
+  clearCommitModel: () => {},
+  getImageRecognitionModel: () => null,
+  saveImageRecognitionModel: () => {},
+  clearImageRecognitionModel: () => {},
 }))
 
 const MODELS: ModelInfo[] = [

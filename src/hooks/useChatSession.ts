@@ -47,7 +47,7 @@ import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import { getImageRecognitionModel } from '../utils/modelUtils'
-import { getSDKClient } from '../api/sdk'
+import { getSDKClient, unwrap } from '../api/sdk'
 import type { ChatAreaHandle } from '../features/chat'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
@@ -614,12 +614,10 @@ export function useChatSession({
       if (hasImageAttachments && !input.imageSupported && imageModelConfig) {
         try {
           const sdk = getSDKClient()
-          const childResult = await sdk.session.create({
-            body: {
-              parentID: sessionId ?? undefined,
-              title: '图片识别',
-            },
-          })
+          const childResult = unwrap(await sdk.session.create({
+            parentID: sessionId ?? undefined,
+            title: '图片识别',
+          }))
           const childSessionId = childResult.id
 
           await sendMessageAsync({
@@ -731,7 +729,7 @@ export function useChatSession({
     try {
       const childMessages = await getSessionMessages(pending.childSessionId)
       const lastAssistant = [...childMessages].reverse().find(m => m.info.role === 'assistant')
-      const description = lastAssistant?.parts?.filter(p => p.type === 'text').map(p => (p as any).text).join('\n') || ''
+      const description = lastAssistant?.parts?.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n') || ''
 
       const text = `${pending.originalText}\n\n[图片描述：${description}]`
       await sendMessageAsync({
@@ -749,7 +747,7 @@ export function useChatSession({
     } catch (error) {
       handleError('confirm image result', error)
     }
-  }, [effectiveDirectory, navigateToSession, handleError])
+  }, [effectiveDirectory, navigateToSession])
 
   const handleCancelImageRecognition = useCallback(() => {
     const pending = pendingImageConfirmRef.current
