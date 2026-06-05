@@ -46,11 +46,22 @@ import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message 
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
+import { getImageRecognitionModel } from '../utils/modelUtils'
+import { getSDKClient } from '../api/sdk'
 import type { ChatAreaHandle } from '../features/chat'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
 
 const handleError = createErrorHandler('session')
+
+export interface PendingImageConfirm {
+  childSessionId: string
+  parentSessionId: string
+  originalText: string
+  parentModel: { providerID: string; modelID: string }
+  parentAgent?: string
+  parentVariant?: string
+}
 
 /**
  * Stable empty session state singleton.
@@ -110,6 +121,7 @@ export function useChatSession({
     () => serverStorage.get(`${STORAGE_KEY_SELECTED_AGENT}:${paneId}`) || '',
   )
   const [restoredContent, setRestoredContent] = useState<{ sessionId: string; content: RevertHistoryItem } | null>(null)
+  const [pendingImageConfirm, setPendingImageConfirm] = useState<PendingImageConfirm | null>(null)
 
   const setSelectedAgent = useCallback(
     (agentName: string) => {
@@ -450,6 +462,11 @@ export function useChatSession({
     sseCallbacksRef.current = sseCallbacks
   }, [sseCallbacks])
 
+  const pendingImageConfirmRef = useRef<PendingImageConfirm | null>(null)
+  useEffect(() => {
+    pendingImageConfirmRef.current = pendingImageConfirm
+  }, [pendingImageConfirm])
+
   // 注册 pane 级 consumer，SSE 事件按 sessionId 分发到此
   useEffect(() => {
     const unregister = registerSessionConsumer(paneId, routeSessionId, {
@@ -584,10 +601,58 @@ export function useChatSession({
       attachments: Attachment[]
       directory: string
       model: { providerID: string; modelID: string }
+      imageSupported?: boolean
       options?: { agent?: string; variant?: string }
       allowCreateSession?: boolean
     }) => {
       let sessionId = input.sessionId ?? routeSessionId
+
+      // 检测是否需要图片识别子代理
+      const hasImageAttachments = input.attachments.some(a => a.mime?.startsWith('image/'))
+      const imageModelConfig = hasImageAttachments && !input.imageSupported ? getImageRecognitionModel() : null
+
+      if (hasImageAttachments && !input.imageSupported && imageModelConfig) {
+        try {
+          const sdk = getSDKClient()
+          const childResult = await sdk.session.create({
+            body: {
+              parentID: sessionId ?? undefined,
+              title: '图片识别',
+            },
+          })
+          const childSessionId = childResult.id
+
+          await sendMessageAsync({
+            sessionId: childSessionId,
+            text: input.content,
+            attachments: input.attachments,
+            model: {
+              providerID: imageModelConfig.providerId,
+              modelID: imageModelConfig.modelId,
+            },
+            system: '你是一个图片识别助手。请根据用户的提问简洁准确地描述图片内容。',
+            tools: {},
+            directory: input.directory,
+          })
+
+          const pending: PendingImageConfirm = {
+            childSessionId,
+            parentSessionId: sessionId ?? '',
+            originalText: input.content,
+            parentModel: input.model,
+            parentAgent: input.options?.agent,
+            parentVariant: input.options?.variant,
+          }
+          setPendingImageConfirm(pending)
+          navigateToSession(childSessionId, input.directory)
+
+          return true
+        } catch (error) {
+          handleError('image recognition', error)
+          return false
+        }
+      }
+
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
 
       try {
@@ -604,7 +669,6 @@ export function useChatSession({
 
         messageStore.setStreaming(sessionId, true)
 
-        // 记录发送前的消息数量，作为判断 SSE 是否推送新消息的基线
         const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
 
         await sendMessageAsync({
@@ -617,14 +681,11 @@ export function useChatSession({
           directory: input.directory,
         })
 
-        // 兜底：等待短暂时间后检查 SSE 是否已推送用户消息，
-        // 若未收到则主动拉取补齐，避免 SSE 断流导致用户消息不显示
         const pullSessionId = sessionId
         const pullDir = input.directory
         setTimeout(() => {
           const state = messageStore.getSessionState(pullSessionId)
           if (!state) return
-          // 消息数量增加了，说明 SSE 已正常推送
           if (state.messages.length > msgCountBeforeSend) return
 
           getSessionMessages(pullSessionId, 5, pullDir)
@@ -642,9 +703,7 @@ export function useChatSession({
                 }
               }
             })
-            .catch(() => {
-              // 拉取失败不影响主流程，SSE 重连后仍可补齐
-            })
+            .catch(() => {})
         }, 1500)
 
         return true
@@ -664,6 +723,41 @@ export function useChatSession({
     },
     [routeSessionId, navigateToSession, createSession],
   )
+
+  const handleConfirmImageResult = useCallback(async () => {
+    const pending = pendingImageConfirmRef.current
+    if (!pending) return
+
+    try {
+      const childMessages = await getSessionMessages(pending.childSessionId)
+      const lastAssistant = [...childMessages].reverse().find(m => m.info.role === 'assistant')
+      const description = lastAssistant?.parts?.filter(p => p.type === 'text').map(p => (p as any).text).join('\n') || ''
+
+      const text = `${pending.originalText}\n\n[图片描述：${description}]`
+      await sendMessageAsync({
+        sessionId: pending.parentSessionId,
+        text,
+        attachments: [],
+        model: pending.parentModel,
+        agent: pending.parentAgent,
+        variant: pending.parentVariant,
+        directory: effectiveDirectory || '',
+      })
+
+      setPendingImageConfirm(null)
+      navigateToSession(pending.parentSessionId)
+    } catch (error) {
+      handleError('confirm image result', error)
+    }
+  }, [effectiveDirectory, navigateToSession, handleError])
+
+  const handleCancelImageRecognition = useCallback(() => {
+    const pending = pendingImageConfirmRef.current
+    if (pending) {
+      setPendingImageConfirm(null)
+      navigateToSession(pending.parentSessionId)
+    }
+  }, [navigateToSession])
 
   // Send message handler
   const handleSend = useCallback(
@@ -717,6 +811,7 @@ export function useChatSession({
           providerID: currentModel.providerId,
           modelID: currentModel.id,
         },
+        imageSupported: currentModel.supportsImages,
         options,
         directory: effectiveDirectory || '',
         allowCreateSession: true,
@@ -1107,6 +1202,11 @@ export function useChatSession({
     // Animation
     registerMessage,
     registerInputBox,
+
+    // Image recognition
+    pendingImageConfirm,
+    handleConfirmImageResult,
+    handleCancelImageRecognition,
 
     // Handlers
     handleSend,
