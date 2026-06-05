@@ -44,7 +44,7 @@ async function main() {
     console.log(`  ✓ Port ${BACKEND_PORT} already in use — skipping opencode serve`);
   } else {
     console.log(`  ◆ Starting opencode serve on port ${BACKEND_PORT}...`);
-    backendProc = spawn('opencode', ['serve'], {
+    backendProc = spawn('opencode', ['serve', '--hostname', '0.0.0.0'], {
       stdio: 'inherit',
       shell: true,
       env: { ...process.env },
@@ -62,9 +62,10 @@ async function main() {
     }
   }
 
-  const viteProc = spawn('npx', ['vite'], {
+  const viteProc = spawn('npx', ['vite', '--host', '0.0.0.0'], {
     stdio: 'inherit',
     shell: true,
+    env: { ...process.env },
   });
 
   viteProc.on('close', (code) => {

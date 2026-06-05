@@ -35,7 +35,7 @@ fn build_opencode_command(
     env_vars: &std::collections::HashMap<String, String>,
 ) -> Command {
     let mut cmd = Command::new(binary_path);
-    cmd.arg("serve").stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.arg("serve").arg("--hostname").arg("0.0.0.0").stdout(Stdio::null()).stderr(Stdio::null());
 
     // 注入用户配置的环境变量
     for (key, value) in env_vars {
