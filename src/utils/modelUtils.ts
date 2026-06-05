@@ -436,3 +436,34 @@ export function getPinnedModels(models: ModelInfo[]): ModelInfo[] {
   // 保持置顶顺序
   return pinnedKeys.map(k => modelMap.get(k)).filter((m): m is ModelInfo => !!m)
 }
+
+// ============================================
+// 图片识别模型存储
+// ============================================
+
+const IMAGE_RECOGNITION_MODEL_KEY = 'global-image-recognition-model'
+
+export function getImageRecognitionModel(): { modelKey: string; providerId: string; modelId: string } | null {
+  try {
+    const stored = serverStorage.get(IMAGE_RECOGNITION_MODEL_KEY)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveImageRecognitionModel(selection: { modelKey: string; providerId: string; modelId: string }): void {
+  try {
+    serverStorage.set(IMAGE_RECOGNITION_MODEL_KEY, JSON.stringify(selection))
+  } catch (e) {
+    console.warn('Failed to save image recognition model:', e)
+  }
+}
+
+export function clearImageRecognitionModel(): void {
+  try {
+    serverStorage.remove(IMAGE_RECOGNITION_MODEL_KEY)
+  } catch (e) {
+    console.warn('Failed to clear image recognition model:', e)
+  }
+}
