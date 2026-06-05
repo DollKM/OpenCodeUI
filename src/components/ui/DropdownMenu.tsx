@@ -65,16 +65,19 @@ export function DropdownMenu({
       // 按钮中点相对容器位置，决定对齐方向
       const btnCenter = (rect.left + rect.right) / 2
       const containerCenter = (cRect.left + cRect.right) / 2
+      const minW = typeof minWidth === 'number' ? minWidth : 200
 
       if (btnCenter > containerCenter) {
         // 按钮偏右 → 右对齐，maxWidth = 按钮右边缘到容器左边缘
         pos.right = window.innerWidth - rect.right
-        size.maxWidth = rect.right - cRect.left
+        size.maxWidth = Math.max(rect.right - cRect.left, minW)
+        size.minWidth = Math.min(rect.right - cRect.left, minW)
         size.transformOrigin = position === 'top' ? 'bottom right' : 'top right'
       } else {
         // 按钮偏左 → 左对齐，maxWidth = 容器右边缘到按钮左边缘
         pos.left = rect.left
-        size.maxWidth = cRect.right - rect.left
+        size.maxWidth = Math.max(cRect.right - rect.left, minW)
+        size.minWidth = Math.min(cRect.right - rect.left, minW)
         size.transformOrigin = position === 'top' ? 'bottom left' : 'top left'
       }
     } else if (mobileFullWidth && window.innerWidth < 640) {
