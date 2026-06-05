@@ -711,6 +711,7 @@ export const ChatPane = memo(function ChatPane({
               selectedModelKey={selectedModelKey}
               onModelChange={handleModelChange}
               onOpenSidebar={onOpenSidebar}
+              onNewSession={handleNewSession}
               isPaneFullscreen={isPaneFullscreen}
               onTogglePaneFullscreen={onTogglePaneFullscreen}
               modelSelectorRef={modelSelectorRef}

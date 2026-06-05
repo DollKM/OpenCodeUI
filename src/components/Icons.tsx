@@ -87,6 +87,7 @@ import {
   Rows2,
   GripVertical,
   AppWindow,
+  Ellipsis,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -214,3 +215,4 @@ export const SplitHorizontalIcon = wrap(Columns2)
 export const SplitVerticalIcon = wrap(Rows2)
 export const GripVerticalIcon = wrap(GripVertical)
 export const AppWindowIcon = wrap(AppWindow)
+export const EllipsisIcon = wrap(Ellipsis)

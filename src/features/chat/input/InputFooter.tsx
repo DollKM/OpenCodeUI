@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RefObject } from 'react'
-import { CheckIcon, ClockIcon, CircleIcon, CloseIcon, FastForwardIcon } from '../../../components/Icons'
+import { CheckIcon, ClockIcon, CircleIcon, CloseIcon, FastForwardIcon, NewChatIcon } from '../../../components/Icons'
 import { CircularProgress } from '../../../components/CircularProgress'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
@@ -249,7 +249,11 @@ export const InputFooter = memo(function InputFooter({
 
           <span className="text-text-500/30 shrink-0">·</span>
 
-          <button onClick={onNewChat} className="hover:text-text-300 transition-colors shrink-0">
+          <button
+            onClick={onNewChat}
+            className="flex items-center gap-1 h-7 px-2 rounded-md text-[length:var(--fs-xs)] text-text-400 hover:text-text-100 hover:bg-accent-main-100/10 transition-colors shrink-0"
+          >
+            <NewChatIcon size={12} />
             {t('sidebar.newChat')}
           </button>
         </>

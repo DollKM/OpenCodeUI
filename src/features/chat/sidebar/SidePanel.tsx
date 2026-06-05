@@ -24,7 +24,6 @@ import {
 import {
   useDirectory,
   useSessionStats,
-  useKeybindingLabel,
   useGitWorkspaceCatalog,
   useVcsInfo,
 } from '../../../hooks'
@@ -249,7 +248,6 @@ export function SidePanel({
   }, [])
 
   const showLabels = isExpanded || isMobile
-  const newChatShortcut = useKeybindingLabel('newSession')
 
   // Session stats
   const { messages } = useMessageStore()
@@ -915,11 +913,6 @@ export function SidePanel({
                         <div className="text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 font-mono">
                           {project.worktree ? getParentPath(project.worktree) : ''}
                         </div>
-                        {projectStatus === 'working' && (
-                          <div className="flex">
-                            <FlowingDots />
-                          </div>
-                        )}
                       </div>
                     </button>
                     <button

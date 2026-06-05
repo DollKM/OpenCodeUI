@@ -12,8 +12,10 @@ import {
   GitWorktreeIcon,
   TerminalIcon,
   FolderIcon,
+  EllipsisIcon,
+  PlusIcon,
 } from '../../components/Icons'
-import { IconButton } from '../../components/ui'
+import { IconButton, DropdownMenu, MenuItem } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useMessageStore } from '../../store'
@@ -36,6 +38,7 @@ interface HeaderProps {
   selectedModelKey: string | null
   onModelChange: (modelKey: string, model: ModelInfo) => void
   onOpenSidebar?: () => void
+  onNewSession?: () => void
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
   modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
@@ -124,6 +127,7 @@ export function Header({
   selectedModelKey,
   onModelChange,
   onOpenSidebar,
+  onNewSession,
   isPaneFullscreen = false,
   onTogglePaneFullscreen,
   modelSelectorRef,
@@ -185,6 +189,9 @@ export function Header({
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const moreTriggerRef = useRef<HTMLButtonElement>(null)
+  const moreMenuRef = useRef<HTMLDivElement>(null)
 
   const sessionTitle = currentSessionTitle || t('header.newChat')
   const isCompact = presentation.isCompact
@@ -206,6 +213,21 @@ export function Header({
       titleInputRef.current.select()
     }
   }, [isEditingTitle])
+
+  // More menu click outside
+  useEffect(() => {
+    if (!moreMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        !moreTriggerRef.current?.contains(e.target as Node) &&
+        !moreMenuRef.current?.contains(e.target as Node)
+      ) {
+        setMoreMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [moreMenuOpen])
 
   const handleStartEdit = () => {
     if (!sessionId) return
@@ -262,13 +284,26 @@ export function Header({
         )}
 
         {!isCompact && (
-          <ModelSelector
-            ref={modelSelectorRef}
-            models={models}
-            selectedModelKey={selectedModelKey}
-            onSelect={onModelChange}
-            isLoading={modelsLoading}
-          />
+          <>
+            <ModelSelector
+              ref={modelSelectorRef}
+              models={models}
+              selectedModelKey={selectedModelKey}
+              onSelect={onModelChange}
+              isLoading={modelsLoading}
+            />
+            {onNewSession && (
+              <button
+                type="button"
+                onClick={onNewSession}
+                aria-label={t('sidebar.newChat')}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-main-100/10 hover:bg-accent-main-100/20 text-accent-main-100 hover:text-accent-main-100 active:scale-[0.97] transition-all duration-200 shrink-0 border border-accent-main-100/20"
+              >
+                <PlusIcon size={16} />
+                <span className="text-[length:var(--fs-sm)] font-medium whitespace-nowrap">{t('sidebar.newChat')}</span>
+              </button>
+            )}
+          </>
         )}
 
         {isCompact && <div className="min-w-0">{titleControl}</div>}
@@ -277,86 +312,153 @@ export function Header({
       {!isCompact && <div className="absolute left-1/2 -translate-x-1/2 flex z-20">{titleControl}</div>}
 
       <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
-        <div className="flex items-center gap-0.5">
-          {directory && (
+        {isCompact ? (
+          <div className="relative">
             <IconButton
-              aria-label={t('header.openInVSCode')}
-              onClick={handleOpenInVSCode}
+              ref={moreTriggerRef}
+              aria-label="More actions"
+              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
               className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-              title={t('header.openInVSCode')}
             >
-              <AppWindowIcon size={18} />
+              <EllipsisIcon size={18} />
             </IconButton>
-          )}
+            <DropdownMenu
+              triggerRef={moreTriggerRef}
+              isOpen={moreMenuOpen}
+              position="bottom"
+              align="right"
+              minWidth="180px"
+            >
+              <div ref={moreMenuRef}>
+                {directory && (
+                  <MenuItem
+                    icon={<AppWindowIcon size={16} />}
+                    label={t('header.openInVSCode')}
+                    onClick={() => { handleOpenInVSCode(); setMoreMenuOpen(false) }}
+                  />
+                )}
+                <MenuItem
+                  icon={<GitCommitIcon size={16} />}
+                  label={t('header.changes')}
+                  onClick={() => { layoutStore.addChangesTab('right'); setMoreMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<TeachIcon size={16} />}
+                  label={t('header.skills')}
+                  onClick={() => { layoutStore.addSkillTab('right'); setMoreMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<PlugIcon size={16} />}
+                  label={t('header.mcpServers')}
+                  onClick={() => { layoutStore.addMcpTab('right'); setMoreMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<GitWorktreeIcon size={16} />}
+                  label={t('header.worktrees')}
+                  onClick={() => { layoutStore.addWorktreeTab('right'); setMoreMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<TerminalIcon size={16} />}
+                  label={t('header.terminal')}
+                  onClick={() => { handleOpenTerminal(); setMoreMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<FolderIcon size={16} />}
+                  label={t('header.files')}
+                  onClick={() => { layoutStore.addFilesTab('right'); setMoreMenuOpen(false) }}
+                />
+                {onTogglePaneFullscreen && (
+                  <MenuItem
+                    icon={isPaneFullscreen ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
+                    label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+                    onClick={() => { onTogglePaneFullscreen(); setMoreMenuOpen(false) }}
+                  />
+                )}
+              </div>
+            </DropdownMenu>
+          </div>
+        ) : (
+          <div className="flex items-center gap-0.5">
+            {directory && (
+              <IconButton
+                aria-label={t('header.openInVSCode')}
+                onClick={handleOpenInVSCode}
+                className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+                title={t('header.openInVSCode')}
+              >
+                <AppWindowIcon size={18} />
+              </IconButton>
+            )}
 
-          <IconButton
-            aria-label={t('header.changes')}
-            onClick={() => layoutStore.addChangesTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            title={t('header.changes')}
-          >
-            <GitCommitIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={t('header.skills')}
-            onClick={() => layoutStore.addSkillTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50 relative"
-            title={t('header.skills')}
-          >
-            <TeachIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={t('header.mcpServers')}
-            onClick={() => layoutStore.addMcpTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            title={t('header.mcpServers')}
-          >
-            <PlugIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={t('header.worktrees')}
-            onClick={() => layoutStore.addWorktreeTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            title={t('header.worktrees')}
-          >
-            <GitWorktreeIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={t('header.terminal')}
-            onClick={handleOpenTerminal}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            title={t('header.terminal')}
-          >
-            <TerminalIcon size={18} />
-          </IconButton>
-
-          <IconButton
-            aria-label={t('header.files')}
-            onClick={() => layoutStore.addFilesTab('right')}
-            className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-            title={t('header.files')}
-          >
-            <FolderIcon size={18} />
-          </IconButton>
-
-          {onTogglePaneFullscreen && (
             <IconButton
-              aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
-              onClick={onTogglePaneFullscreen}
-              className={`transition-colors ${
-                isPaneFullscreen
-                  ? 'text-accent-main-100 bg-bg-200/50'
-                  : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'
-              }`}
+              aria-label={t('header.changes')}
+              onClick={() => layoutStore.addChangesTab('right')}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.changes')}
             >
-              {isPaneFullscreen ? <MinimizeIcon size={18} /> : <MaximizeIcon size={18} />}
+              <GitCommitIcon size={18} />
             </IconButton>
-          )}
-        </div>
+
+            <IconButton
+              aria-label={t('header.skills')}
+              onClick={() => layoutStore.addSkillTab('right')}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50 relative"
+              title={t('header.skills')}
+            >
+              <TeachIcon size={18} />
+            </IconButton>
+
+            <IconButton
+              aria-label={t('header.mcpServers')}
+              onClick={() => layoutStore.addMcpTab('right')}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.mcpServers')}
+            >
+              <PlugIcon size={18} />
+            </IconButton>
+
+            <IconButton
+              aria-label={t('header.worktrees')}
+              onClick={() => layoutStore.addWorktreeTab('right')}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.worktrees')}
+            >
+              <GitWorktreeIcon size={18} />
+            </IconButton>
+
+            <IconButton
+              aria-label={t('header.terminal')}
+              onClick={handleOpenTerminal}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.terminal')}
+            >
+              <TerminalIcon size={18} />
+            </IconButton>
+
+            <IconButton
+              aria-label={t('header.files')}
+              onClick={() => layoutStore.addFilesTab('right')}
+              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
+              title={t('header.files')}
+            >
+              <FolderIcon size={18} />
+            </IconButton>
+
+            {onTogglePaneFullscreen && (
+              <IconButton
+                aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+                onClick={onTogglePaneFullscreen}
+                className={`transition-colors ${
+                  isPaneFullscreen
+                    ? 'text-accent-main-100 bg-bg-200/50'
+                    : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'
+                }`}
+              >
+                {isPaneFullscreen ? <MinimizeIcon size={18} /> : <MaximizeIcon size={18} />}
+              </IconButton>
+            )}
+          </div>
+        )}
       </div>
 
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
