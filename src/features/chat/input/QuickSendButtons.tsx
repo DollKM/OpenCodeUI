@@ -55,10 +55,10 @@ export const QuickSendButtons = memo(function QuickSendButtons({
     [onInsertText],
   )
 
-  if (!sessionId || isStreaming) return null
+  if (isStreaming) return null
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 flex-wrap justify-center">
       {SKILL_BUTTONS.map(button => (
         <button
           key={button.key}
@@ -69,18 +69,22 @@ export const QuickSendButtons = memo(function QuickSendButtons({
           <span>{t(`quickSendButtons.${button.key}`)}</span>
         </button>
       ))}
-      <div className="w-px h-5 bg-border-200/60 mx-0.5" />
-      {QUICK_SEND_BUTTONS.map(key => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => handleClick(key)}
-          className="flex items-center gap-1 px-2.5 h-[32px] rounded-full bg-accent-main-100/10 backdrop-blur-md border border-accent-main-100/20 text-[length:var(--fs-sm)] leading-[14px] text-text-200 hover:bg-accent-main-100/20 hover:text-text-100 transition-colors whitespace-nowrap shrink-0"
-        >
-          <span>{t(`quickSendButtons.${key}`)}</span>
-          <SendIcon size={12} />
-        </button>
-      ))}
+      {sessionId && (
+        <>
+          <div className="w-px h-5 bg-border-200/60 mx-0.5" />
+          {QUICK_SEND_BUTTONS.map(key => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleClick(key)}
+              className="flex items-center gap-1 px-2.5 h-[32px] rounded-full bg-accent-main-100/10 backdrop-blur-md border border-accent-main-100/20 text-[length:var(--fs-sm)] leading-[14px] text-text-200 hover:bg-accent-main-100/20 hover:text-text-100 transition-colors whitespace-nowrap shrink-0"
+            >
+              <span>{t(`quickSendButtons.${key}`)}</span>
+              <SendIcon size={12} />
+            </button>
+          ))}
+        </>
+      )}
     </div>
   )
 })
