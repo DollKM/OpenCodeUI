@@ -5,6 +5,18 @@
 import { API_BASE_URL } from '../constants'
 import { isTauri } from '../utils/tauri'
 
+/**
+ * 非 Tauri 环境下统一 API 路径策略
+ * - Dev (Vite)：走同源 /api，Vite proxy 去掉 /api 前缀后转发到后端
+ * - Preview/Production：opencode serve 同端口提供前端+API，用真实 URL
+ */
+function proxyUrl(url: string): string {
+  if (!isTauri() && import.meta.env.DEV) {
+    return '/api'
+  }
+  return url
+}
+
 // Tauri plugin-http fetch 缓存（避免重复 dynamic import）
 let _tauriFetch: typeof globalThis.fetch | null = null
 let _tauriFetchLoading: Promise<typeof globalThis.fetch> | null = null
@@ -218,7 +230,7 @@ class ServerStore {
    */
   getActiveBaseUrl(): string {
     const server = this.getActiveServer()
-    return server?.url ?? API_BASE_URL
+    return proxyUrl(server?.url ?? API_BASE_URL)
   }
 
   /**
@@ -381,7 +393,7 @@ class ServerStore {
       }
 
       const f = await getUnifiedFetch()
-      const response = await f(`${server.url}/global/health`, {
+      const response = await f(`${proxyUrl(server.url)}/global/health`, {
         method: 'GET',
         signal: controller.signal,
         headers,
