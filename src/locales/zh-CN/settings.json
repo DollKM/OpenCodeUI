@@ -141,7 +141,9 @@
     "noResults": "没有匹配当前搜索的模型",
     "providerCount": "{{count}} 个模型",
     "commitModelTitle": "Git 提交模型",
-    "commitModelDesc": "选择用于辅助 git 提交的模型"
+    "commitModelDesc": "选择用于辅助 git 提交的模型",
+    "imageRecognitionTitle": "图片识别模型",
+    "imageRecognitionDesc": "当当前模型不支持图片时，将使用此模型在子会话中分析图片。"
   },
   "appearance": {
     "themePresets": "主题预设",

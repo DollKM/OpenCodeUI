@@ -37,7 +37,9 @@
   "inputBox": {
     "dropFilesHere": "拖放文件到此处",
     "replyToAgentMobile": "回复 Agent...",
-    "replyToAgent": "回复 Agent（输入 @ 提及，/ 执行命令）"
+    "replyToAgent": "回复 Agent（输入 @ 提及，/ 执行命令）",
+    "imageRecognitionSubtitle": "图片识别结果 — 确认后发送到主会话",
+    "confirmImageResult": "确认识图结果 →"
   },
   "modelSelector": {
     "selectModel": "选择模型",

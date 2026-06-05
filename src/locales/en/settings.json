@@ -141,7 +141,9 @@
     "noResults": "No models match the current search",
     "providerCount": "{{count}} models",
     "commitModelTitle": "Git Commit Model",
-    "commitModelDesc": "Select the model used for git commit assistance"
+    "commitModelDesc": "Select the model used for git commit assistance",
+    "imageRecognitionTitle": "Image Recognition Model",
+    "imageRecognitionDesc": "When the current model doesn't support images, this model will be used in a sub-session to analyze images."
   },
   "appearance": {
     "themePresets": "Theme Presets",

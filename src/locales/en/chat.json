@@ -37,7 +37,9 @@
   "inputBox": {
     "dropFilesHere": "Drop files here",
     "replyToAgentMobile": "Reply to Agent...",
-    "replyToAgent": "Reply to Agent (type @ to mention, / for commands)"
+    "replyToAgent": "Reply to Agent (type @ to mention, / for commands)",
+    "imageRecognitionSubtitle": "Image recognition result — review and confirm to send to main session",
+    "confirmImageResult": "Confirm →"
   },
   "modelSelector": {
     "selectModel": "Select model",

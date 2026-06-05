@@ -10,6 +10,9 @@ import {
   getCommitModel,
   saveCommitModel,
   clearCommitModel,
+  getImageRecognitionModel,
+  saveImageRecognitionModel,
+  clearImageRecognitionModel,
 } from '../../../utils/modelUtils'
 import { SettingsSection, Toggle, Select } from './SettingsUI'
 
@@ -28,6 +31,7 @@ export function ModelsSettings() {
   const hiddenModelKeySet = useMemo(() => new Set(hiddenModelKeys), [hiddenModelKeys])
 
   const [commitModelKey, setCommitModelKey] = useState<string>(() => getCommitModel()?.modelKey ?? '')
+  const [imageRecogModelKey, setImageRecogModelKey] = useState<string>(() => getImageRecognitionModel()?.modelKey ?? '')
   const prevHiddenRef = useRef(hiddenModelKeySet)
   useEffect(() => {
     const prevHidden = prevHiddenRef.current
@@ -47,6 +51,21 @@ export function ModelsSettings() {
     if (!parsed) return
     saveCommitModel({ modelKey: value, providerId: parsed.providerId, modelId: parsed.modelId })
     setCommitModelKey(value)
+  }, [])
+  const imageCapableModels = useMemo(
+    () => enabledModels.filter(m => m.supportsImages),
+    [enabledModels],
+  )
+  const handleImageRecogModelChange = useCallback((value: string) => {
+    if (!value) {
+      clearImageRecognitionModel()
+      setImageRecogModelKey('')
+      return
+    }
+    const parsed = parseModelKey(value)
+    if (!parsed) return
+    saveImageRecognitionModel({ modelKey: value, providerId: parsed.providerId, modelId: parsed.modelId })
+    setImageRecogModelKey(value)
   }, [])
   const enabledModels = useMemo(
     () => models.filter(m => !hiddenModelKeySet.has(getModelKey(m))),
@@ -83,6 +102,19 @@ export function ModelsSettings() {
           onChange={handleCommitModelChange}
           placeholder="—"
           options={enabledModels.map(model => ({
+            value: getModelKey(model),
+            label: model.name,
+          }))}
+        />
+      </SettingsSection>
+
+      <SettingsSection title={t('models.imageRecognitionTitle')}>
+        <p className="text-[length:var(--fs-sm)] text-text-400 leading-relaxed">{t('models.imageRecognitionDesc')}</p>
+        <Select
+          value={imageRecogModelKey}
+          onChange={handleImageRecogModelChange}
+          placeholder="—"
+          options={imageCapableModels.map(model => ({
             value: getModelKey(model),
             label: model.name,
           }))}
