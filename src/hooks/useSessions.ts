@@ -166,7 +166,6 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
 
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
-        if (session.parentID) return
         if (!matchesDirectory(session)) return
 
         if (searchRef.current) {
@@ -180,8 +179,6 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         })
       },
       onSessionUpdated: session => {
-        if (session.parentID) return
-
         if (searchRef.current) {
           if (matchesDirectory(session)) {
             void fetchSessionsRef.current({ search: searchRef.current || undefined })

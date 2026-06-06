@@ -114,7 +114,8 @@ describe('useSessions', () => {
       latestEventCallbacks.onSessionCreated?.({ ...makeSession('session-child'), parentID: 'parent-1' })
     })
 
-    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
+    // 子 session 也要出现在列表中，方便用户导航回
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-child', 'session-1'])
   })
 
   it('does not refetch on reconnect while a newer request is still in flight', async () => {

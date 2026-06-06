@@ -61,7 +61,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
 
         const data = await getSessions({
-          roots: true,
           limit: currentLimitRef.current,
           directory: targetDir,
           search: search || undefined,
@@ -129,9 +128,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
-        // 忽略子 session（有 parentID 的是子 agent 创建的）
-        if (session.parentID) return
-
         if (!matchesCurrentDirectory(session)) return
 
         // 搜索态下交给服务端重新给出结果，避免本地过滤和服务端逻辑不一致
@@ -146,8 +142,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         })
       },
       onSessionUpdated: session => {
-        if (session.parentID) return
-
         if (searchRef.current) {
           if (matchesCurrentDirectory(session)) {
             fetchSessionsRef.current()
