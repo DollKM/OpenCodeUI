@@ -37,11 +37,14 @@ import {
   deleteSession as apiDeleteSession,
   getSession,
   subscribeToConnectionState,
+  deleteProjectViaServer,
   type ApiSession,
   type ConnectionInfo,
 } from '../../../api'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { uiErrorHandler } from '../../../utils'
+import { serverStorage } from '../../../utils/perServerStorage'
+import { getProjects, type ApiProject } from '../../../api'
 
 // 侧边栏设计模式：
 // - 按钮结构统一，不因 expanded/collapsed 改变 DOM
@@ -71,6 +74,7 @@ interface ProjectItem {
   reorderPath?: string
   workspaceDirectories?: string[]
   sectionKind?: 'project' | 'workspace'
+  created?: number
 }
 
 type ProjectStatus = 'working'
@@ -92,10 +96,6 @@ function findProjectGroupForDirectory(projects: ProjectItem[], directory: string
       return true
     }
 
-    if (project.workspaceDirectories?.some(workspace => isSameDirectory(workspace, directory))) {
-      return true
-    }
-
     if (project.memberDirectories?.some(memberDirectory => isSameDirectory(memberDirectory, directory))) {
       return true
     }
@@ -107,7 +107,6 @@ function findProjectGroupForDirectory(projects: ProjectItem[], directory: string
 function matchesProjectDirectory(directory: string | undefined, project: ProjectItem): boolean {
   if (!directory) return false
   if (isSameDirectory(project.worktree, directory)) return true
-  if (project.workspaceDirectories?.some(wd => isSameDirectory(wd, directory))) return true
   if (project.memberDirectories?.some(md => isSameDirectory(md, directory))) return true
   return false
 }
@@ -153,6 +152,7 @@ export function SidePanel({
     [currentDirectory],
   )
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
+  const [serverProjects, setServerProjects] = useState<ApiProject[]>([])
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<{ isOpen: boolean; projectId: string | null }>({
     isOpen: false,
     projectId: null,
@@ -168,10 +168,21 @@ export function SidePanel({
   const projectSelectionAnchorIdRef = useRef<string | null>(null)
   const recentsSelectionRootRef = useRef<HTMLDivElement>(null)
   const pendingAutoSelectRef = useRef(false)
+  // 隐藏项目 ID（用户在本地删除但服务端无删除 API）
+  const [hiddenProjectIds, setHiddenProjectIds] = useState<Set<string>>(() => {
+    const stored = serverStorage.getJSON<string[]>('hidden-project-ids')
+    return new Set(stored ?? [])
+  })
+  const persistHiddenIds = useCallback((ids: Set<string>) => {
+    setHiddenProjectIds(ids)
+    serverStorage.setJSON('hidden-project-ids', Array.from(ids))
+  }, [])
   // 批量删除确认弹窗
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
   const [isBatchDeleting, setIsBatchDeleting] = useState(false)
+  // 正在通过服务端删除的项目 ID 集合
+  const [deletingProjectIds, setDeletingProjectIds] = useState<Set<string>>(new Set())
 
   const getVisibleSelectionIds = useCallback((kind: 'session' | 'project') => {
     const root = recentsSelectionRootRef.current
@@ -269,6 +280,21 @@ export function SidePanel({
 
   useEffect(() => {
     return subscribeToConnectionState(setConnectionState)
+  }, [])
+
+  // 从服务器获取项目列表
+  useEffect(() => {
+    let cancelled = false
+    const fetch = async () => {
+      try {
+        const all = await getProjects()
+        if (!cancelled) setServerProjects(all)
+      } catch {
+        // 服务端不可达时静默失败
+      }
+    }
+    fetch()
+    return () => { cancelled = true }
   }, [])
 
   const { sessions, isLoading, isLoadingMore, hasMore, search, setSearch, loadMore, deleteSession, refresh } =
@@ -406,53 +432,21 @@ export function SidePanel({
 
   const buildProjectGroups = useCallback(
     (directories: typeof savedDirectories): ProjectItem[] => {
-      const savedNameByPath = new Map(
-        directories.map(directory => [normalizeToForwardSlash(directory.path), directory.name]),
-      )
-      const groups = new Map<string, ProjectItem>()
+      const result = directories.map(directory => {
+        const normalizedPath = normalizeToForwardSlash(directory.path)
+        const meta = gitWorkspaceCatalog.get(normalizedPath)
 
-      for (const directory of directories) {
-        const normalizedDirectory = normalizeToForwardSlash(directory.path)
-        const meta = gitWorkspaceCatalog.get(normalizedDirectory)
-        const { projectId, workspaceDirectories } = getProjectGroupIdentity(normalizedDirectory, meta)
-        const existing = groups.get(projectId)
-
-        if (existing) {
-          groups.set(projectId, {
-            ...existing,
-            memberDirectories: [...(existing.memberDirectories ?? []), directory.path],
-            reorderPath: existing.reorderPath ?? directory.path,
-          })
-          continue
-        }
-
-        groups.set(projectId, {
-          id: projectId,
-          worktree: projectId,
-          name: savedNameByPath.get(projectId) ?? getDirectoryName(projectId),
+        return {
+          id: normalizedPath,
+          worktree: normalizedPath,
+          name: directory.name || getDirectoryName(normalizedPath),
           canReorder: true,
           memberDirectories: [directory.path],
           reorderPath: directory.path,
-          workspaceDirectories,
-        })
-      }
-
-      return Array.from(groups.values()).map(project => {
-        if (!project.workspaceDirectories?.length) return project
-
-        const savedWorkspaceDirectories = (project.memberDirectories ?? [])
-          .map(directory => normalizeToForwardSlash(directory))
-          .filter(directory => project.workspaceDirectories?.some(workspace => isSameDirectory(workspace, directory)))
-
-        const remainingWorkspaceDirectories = project.workspaceDirectories.filter(
-          workspace => !savedWorkspaceDirectories.some(directory => isSameDirectory(directory, workspace)),
-        )
-
-        return {
-          ...project,
-          workspaceDirectories: [...savedWorkspaceDirectories, ...remainingWorkspaceDirectories],
+          workspaceDirectories: meta?.workspaces,
         }
       })
+      return result
     },
     [gitWorkspaceCatalog],
   )
@@ -466,10 +460,6 @@ export function SidePanel({
 
     return buildProjectGroups(sortedDirectories)
   }, [buildProjectGroups, savedDirectories])
-
-  const projects = useMemo<ProjectItem[]>(() => {
-    return selectorProjectGroups
-  }, [selectorProjectGroups])
 
   const projectStatusMap = useMemo(() => {
     const map = new Map<string, ProjectStatus>()
@@ -489,6 +479,7 @@ export function SidePanel({
     if (!currentDirectory) return null
 
     const groupedProject = findProjectGroupForDirectory(folderProjectGroups, normalizedCurrentDirectory!)
+
     if (groupedProject) return groupedProject
 
     const meta = gitWorkspaceCatalog.get(normalizedCurrentDirectory!)
@@ -496,6 +487,7 @@ export function SidePanel({
     const found = findProjectGroupForDirectory(folderProjectGroups, projectId)
     if (found) return found
 
+    const serverProject = serverProjects.find(p => normalizeToForwardSlash(p.worktree) === projectId)
     return {
       id: projectId,
       worktree: projectId,
@@ -503,8 +495,9 @@ export function SidePanel({
       canReorder: false,
       memberDirectories: [],
       workspaceDirectories,
+      created: serverProject?.time?.created,
     }
-  }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, normalizedCurrentDirectory])
+  }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, normalizedCurrentDirectory, serverProjects])
 
   const currentProjectLabel = useMemo(() => {
     if (!currentProject) return t('sidebar.selectProject') || '选择项目...'
@@ -531,6 +524,58 @@ export function SidePanel({
 
     return list
   }, [folderProjectGroups, currentDirectory, currentProject])
+
+  // 服务端项目列表 → ProjectItem[]
+  const serverProjectItems = useMemo<ProjectItem[]>(() => {
+    return serverProjects
+      .filter(p => p.id !== 'global' && p.worktree && !hiddenProjectIds.has(p.id))
+      .map(p => ({
+        id: p.id,
+        worktree: p.worktree,
+        name: p.name || (p.sandboxes?.length > 0 ? getDirectoryName(p.sandboxes[0]) : undefined) || getDirectoryName(p.worktree) || p.worktree,
+        canReorder: false,
+        memberDirectories: [p.worktree],
+        workspaceDirectories: p.sandboxes?.length > 0 ? p.sandboxes : undefined,
+        created: p.time?.created,
+      }))
+  }, [serverProjects, hiddenProjectIds])
+
+  // 合并本地项目 + 服务端额外项目，并从服务端数据补充 created 字段
+  const mergedProjects = useMemo<ProjectItem[]>(() => {
+    const serverByPath = new Map(serverProjectItems.map(p => [normalizeToForwardSlash(p.worktree), p]))
+    const localPaths = new Set(folderProjects.map(p => normalizeToForwardSlash(p.worktree)))
+    const extra = serverProjectItems.filter(p => !localPaths.has(normalizeToForwardSlash(p.worktree)))
+    return [...folderProjects, ...extra].map(p => {
+      if (p.created) return p
+      const match = serverByPath.get(normalizeToForwardSlash(p.worktree))
+      return match?.created ? { ...p, created: match.created } : p
+    })
+  }, [folderProjects, serverProjectItems])
+
+  // 工作中的项目状态映射（用于排序 + 动画指示）
+  const mergedProjectStatusMap = useMemo(() => {
+    const map = new Map<string, ProjectStatus>()
+
+    for (const entry of busySessions) {
+      for (const project of mergedProjects) {
+        if (matchesProjectDirectory(entry.directory, project)) {
+          map.set(project.id, 'working')
+        }
+      }
+    }
+
+    return map
+  }, [busySessions, mergedProjects])
+
+  // 排序：工作中的排在前面，同样工作状态下按 created 从新到旧
+  const sortedMergedProjects = useMemo(() => {
+    return [...mergedProjects].sort((a, b) => {
+      const aWorking = mergedProjectStatusMap.has(a.id) ? 1 : 0
+      const bWorking = mergedProjectStatusMap.has(b.id) ? 1 : 0
+      if (aWorking !== bWorking) return bWorking - aWorking
+      return (b.created ?? 0) - (a.created ?? 0)
+    })
+  }, [mergedProjects, mergedProjectStatusMap])
 
   const handleSelectAll = useCallback(() => {
     const allSessionIds = sessions.map(s => s.id)
@@ -622,22 +667,27 @@ export function SidePanel({
   )
 
   const handleRemoveProject = useCallback(
-    (projectId: string) => {
-      getProjectDirectoriesToRemove(projectId).forEach(directory => removeDirectory(directory))
+    async (projectId: string) => {
+      setDeletingProjectIds(prev => new Set(prev).add(projectId))
+      try {
+        const directories = getProjectDirectoriesToRemove(projectId)
+        const directory = directories[0]
+        if (directory) await deleteProjectViaServer(directory)
+        directories.forEach(dir => removeDirectory(dir))
+        const next = new Set(hiddenProjectIds)
+        next.add(projectId)
+        persistHiddenIds(next)
+      } catch (e) {
+        uiErrorHandler('remove project', e)
+      } finally {
+        setDeletingProjectIds(prev => {
+          const next = new Set(prev)
+          next.delete(projectId)
+          return next
+        })
+      }
     },
-    [getProjectDirectoriesToRemove, removeDirectory],
-  )
-
-  const handleReorderProjectGroup = useCallback(
-    (draggedPath: string, targetPath: string) => {
-      const draggedProject = folderProjects.find(project => isSameDirectory(project.id, draggedPath))
-      const targetProject = folderProjects.find(project => isSameDirectory(project.id, targetPath))
-      const draggedReorderPath = draggedProject?.reorderPath
-      const targetReorderPath = targetProject?.reorderPath
-      if (!draggedReorderPath || !targetReorderPath) return
-      reorderDirectories(draggedReorderPath, targetReorderPath)
-    },
-    [folderProjects, reorderDirectories],
+    [getProjectDirectoriesToRemove, removeDirectory, hiddenProjectIds, persistHiddenIds],
   )
 
   const handleSelect = useCallback(
@@ -777,15 +827,35 @@ export function SidePanel({
   }, [selectedSessionIds, selectedSessionId, sessionLookup, currentDirectory, refresh, onNewSession])
 
   // ---- 批量移除项目 ----
-  const handleBatchRemoveProjects = useCallback(() => {
+  const handleBatchRemoveProjects = useCallback(async () => {
     if (selectedProjectIds.size === 0) return
-    for (const projectId of selectedProjectIds) {
-      getProjectDirectoriesToRemove(projectId).forEach(directory => removeDirectory(directory))
-    }
-    setSelectedProjectIds(new Set())
-    projectSelectionAnchorIdRef.current = null
+    const ids = Array.from(selectedProjectIds)
+    setDeletingProjectIds(prev => new Set([...prev, ...ids]))
     setBatchRemoveProjectConfirm(false)
-  }, [getProjectDirectoriesToRemove, selectedProjectIds, removeDirectory])
+    try {
+      await Promise.allSettled(ids.map(id => {
+        const dirs = getProjectDirectoriesToRemove(id)
+        const dir = dirs[0]
+        return dir ? deleteProjectViaServer(dir) : Promise.resolve()
+      }))
+      const next = new Set(hiddenProjectIds)
+      for (const projectId of ids) {
+        getProjectDirectoriesToRemove(projectId).forEach(directory => removeDirectory(directory))
+        next.add(projectId)
+      }
+      persistHiddenIds(next)
+    } catch {
+      // individual errors already handled in deleteProjectViaServer
+    } finally {
+      setDeletingProjectIds(prev => {
+        const next = new Set(prev)
+        for (const id of ids) next.delete(id)
+        return next
+      })
+      setSelectedProjectIds(new Set())
+      projectSelectionAnchorIdRef.current = null
+    }
+  }, [getProjectDirectoriesToRemove, selectedProjectIds, removeDirectory, hiddenProjectIds, persistHiddenIds])
 
   const commonFolderRecentListProps = {
     currentDirectory,
@@ -872,9 +942,9 @@ export function SidePanel({
         {showLabels && (
           <div className="rounded-lg border border-border-200/60 glass-alt shadow-sm overflow-hidden mt-1">
             <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
-              {projects.map(project => {
+              {sortedMergedProjects.map(project => {
                 const isActive = currentProject?.id === project.id
-                const projectStatus = projectStatusMap.get(project.id)
+                const projectStatus = mergedProjectStatusMap.get(project.id)
                 const itemLabel =
                   isActive
                     ? currentProjectLabel
@@ -882,7 +952,7 @@ export function SidePanel({
                 return (
                   <div
                     key={project.id}
-                    onClick={() => handleSelectProject(project.id)}
+                    onClick={() => handleSelectProject(project.worktree)}
                     className={`group w-full relative overflow-hidden flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
                       isActive ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
                     }`}
@@ -904,7 +974,7 @@ export function SidePanel({
                       type="button"
                       onClick={e => {
                         e.stopPropagation()
-                        handleSelectProject(project.id)
+                        handleSelectProject(project.worktree)
                       }}
                       aria-current={isActive ? 'true' : undefined}
                       className="min-w-0 flex flex-1 items-center gap-2 text-left bg-transparent border-none p-0"
@@ -936,11 +1006,16 @@ export function SidePanel({
                         e.stopPropagation()
                         setProjectDeleteConfirm({ isOpen: true, projectId: project.id })
                       }}
+                      disabled={deletingProjectIds.has(project.id)}
                       aria-label={t('sidebar.removeProject')}
-                      className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all"
+                      className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all disabled:opacity-50"
                       title={t('common:remove')}
                     >
-                      <TrashIcon size={12} />
+                      {deletingProjectIds.has(project.id) ? (
+                        <SpinnerIcon size={12} className="animate-spin" />
+                      ) : (
+                        <TrashIcon size={12} />
+                      )}
                     </button>
                   </div>
                 )
@@ -1091,7 +1166,7 @@ export function SidePanel({
             <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
               {sidebarFolderRecents && !search ? (
                 <FolderRecentList
-                  projects={folderProjects}
+                  projects={mergedProjects}
                   {...commonFolderRecentListProps}
                   onReorderProject={handleReorderProjectGroup}
                   workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}

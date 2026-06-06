@@ -5,6 +5,8 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
+import { isTauri } from '../utils/tauri'
+import { serverStore } from '../store/serverStore'
 import type { ModelInfo, ApiProject, ApiPath } from './types'
 
 // Re-export all types
@@ -123,6 +125,35 @@ export async function updateProject(
       ...params,
     }),
   )
+}
+
+// ============================================
+// Project Cleanup - 通过 DELETE /project API 删除
+// ============================================
+
+/**
+ * 通过服务端的 DELETE /project API 删除项目
+ */
+export async function deleteProjectViaServer(directory: string): Promise<void> {
+  const baseUrl = serverStore.getActiveBaseUrl()
+  const headers: Record<string, string> = {}
+  const auth = serverStore.getActiveAuth()
+  if (auth?.password) {
+    headers['Authorization'] = `Basic ${btoa(`${auth.username}:${auth.password}`)}`
+  }
+
+  const f = isTauri()
+    ? await import('@tauri-apps/plugin-http').then(mod => mod.fetch as typeof fetch)
+    : globalThis.fetch
+
+  const res = await f(`${baseUrl}/project?directory=${encodeURIComponent(directory)}`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Failed to delete project: ${res.status} ${body}`)
+  }
 }
 
 // ============================================
