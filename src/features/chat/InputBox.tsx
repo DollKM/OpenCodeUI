@@ -735,7 +735,7 @@ function InputBoxComponent({
   // 通用文件上传 — 根据模型能力判断是否接受
   const handleFilesSelected = useCallback(
     async (files: File[]) => {
-      if (files.length === 0 || !supportsAnyFile || isSubmitting) return
+      if (files.length === 0 || isSubmitting) return
 
       const nextAttachments: Attachment[] = []
 
@@ -764,7 +764,7 @@ function InputBoxComponent({
         setAttachments(prev => [...prev, ...nextAttachments])
       }
     },
-    [supportsAnyFile, fileCaps, isSubmitting],
+    [fileCaps, isSubmitting],
   )
 
   // 删除附件
@@ -788,32 +788,30 @@ function InputBoxComponent({
     [attachments, isSubmitting, text],
   )
 
-  // 粘贴处理 — 根据模型能力过滤可粘贴的文件类型
+  // 粘贴处理 — 图片始终允许粘贴到输入框，其他文件类型按模型能力过滤
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
-      if (supportsAnyFile) {
-        const items = e.clipboardData?.items
-        const files: File[] = []
+      const items = e.clipboardData?.items
+      const files: File[] = []
 
-        if (items) {
-          for (let i = 0; i < items.length; i++) {
-            if (items[i].kind === 'file') {
-              const file = items[i].getAsFile()
-              if (file && isFileSupported(ensureFileMime(file).type, fileCaps)) files.push(file)
-            }
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].kind === 'file') {
+            const file = items[i].getAsFile()
+            if (file && isFileSupported(ensureFileMime(file).type, fileCaps)) files.push(file)
           }
         }
+      }
 
-        if (files.length > 0) {
-          e.preventDefault()
-          void handleFilesSelected(files)
-          return
-        }
+      if (files.length > 0) {
+        e.preventDefault()
+        void handleFilesSelected(files)
+        return
       }
 
       // 文本粘贴：让 textarea 默认处理（天然支持换行和 undo）
     },
-    [supportsAnyFile, fileCaps, handleFilesSelected],
+    [fileCaps, handleFilesSelected],
   )
 
   // 拖拽文件到输入框
@@ -911,11 +909,11 @@ function InputBoxComponent({
       }
 
       // 原生文件拖拽（从操作系统拖入）
-      if (supportsAnyFile && e.dataTransfer.files.length > 0) {
+      if (e.dataTransfer.files.length > 0) {
         void handleFilesSelected(Array.from(e.dataTransfer.files))
       }
     },
-    [supportsAnyFile, handleFilesSelected, insertDraggedFile],
+    [handleFilesSelected, insertDraggedFile],
   )
 
   // 滚动同步（备用，overlay 内部也监听了 scroll）

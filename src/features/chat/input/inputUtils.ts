@@ -42,7 +42,8 @@ export function detectSlashTrigger(text: string, cursorPos: number): { query: st
 
 /** 检查文件 MIME 类型是否被当前模型能力支持 */
 export function isFileSupported(mime: string, caps: FileCapabilities): boolean {
-  if (mime.startsWith('image/')) return caps.image
+  // 图片始终允许粘贴到输入框（模型不支持时通过图片识别子代理或直接发送处理）
+  if (mime.startsWith('image/')) return true
   if (mime === 'application/pdf') return caps.pdf
   if (mime.startsWith('audio/')) return caps.audio
   if (mime.startsWith('video/')) return caps.video
