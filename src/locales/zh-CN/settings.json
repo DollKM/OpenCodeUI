@@ -326,6 +326,7 @@
     "cliCardDesc": "UI 所连接的 opencode 后端版本。可直接在此升级。",
     "cliVersion": "CLI 版本",
     "cliLatestRelease": "最新发布",
+    "cliLocalDiff": "本地 vs 上游",
     "cliStatus": "状态",
     "cliStatusChecking": "检查中...",
     "cliStatusOnline": "已连接",
@@ -342,6 +343,8 @@
     "cliUpgradeNow": "立即升级",
     "cliUpgradeToLatest": "升级到最新版",
     "cliRefresh": "刷新",
+    "cliSourcePath": "本地源码路径",
+    "cliSourcePathPlaceholder": "留空则从 GitHub 下载编译好的版本",
     "toastTitle": "发现新版本：{{version}}",
     "toastBody": "点击打开关于页，并查看发布页面。"
   },

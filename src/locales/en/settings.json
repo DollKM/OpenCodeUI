@@ -326,6 +326,7 @@
     "cliCardDesc": "The opencode backend version this UI is connected to. Upgrade it directly from here.",
     "cliVersion": "CLI Version",
     "cliLatestRelease": "Latest Release",
+    "cliLocalDiff": "Local vs Upstream",
     "cliStatus": "Status",
     "cliStatusChecking": "Checking...",
     "cliStatusOnline": "Connected",
@@ -342,6 +343,8 @@
     "cliUpgradeNow": "Upgrade Now",
     "cliUpgradeToLatest": "Upgrade to Latest",
     "cliRefresh": "Refresh",
+    "cliSourcePath": "Local Source Path",
+    "cliSourcePathPlaceholder": "Leave empty to download pre-built release from GitHub",
     "toastTitle": "New version available: {{version}}",
     "toastBody": "Click to open About and view the release page."
   },

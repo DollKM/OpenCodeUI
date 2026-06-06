@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
 import { DownloadIcon, ExternalLinkIcon, RetryIcon, UploadIcon } from '../../../components/Icons'
@@ -13,6 +13,7 @@ import {
 import { serverStore } from '../../../store/serverStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { upgradeOpencode, type UpgradeResult } from '../../../api'
+import { getApiBaseUrl, getAuthHeader } from '../../../api/http'
 import { saveData } from '../../../utils/downloadUtils'
 import { exportSettingsBackup, importSettingsBackup, previewBackupMeta } from '../../../utils/settingsBackup'
 import { isTauri } from '../../../utils/tauri'
@@ -64,6 +65,14 @@ export function AboutSettings() {
   const [cliCheckingUpdate, setCliCheckingUpdate] = useState(false)
   const [cliUpdateError, setCliUpdateError] = useState<string | null>(null)
   const [cliUpdateChecked, setCliUpdateChecked] = useState(false)
+  const [cliSourcePath, setCliSourcePath] = useState(() => localStorage.getItem('opencode-cli-source-path') ?? '')
+  const [cliCommitInfo, setCliCommitInfo] = useState<string | null>(null)
+  const [cliUpdateBehind, setCliUpdateBehind] = useState(0)
+
+  // 持久化 source_path 到 localStorage
+  useEffect(() => {
+    localStorage.setItem('opencode-cli-source-path', cliSourcePath)
+  }, [cliSourcePath])
 
   const handleCheckCliHealth = useCallback(() => {
     if (activeServer) {
@@ -76,7 +85,39 @@ export function AboutSettings() {
     setCliCheckingUpdate(true)
     setCliUpdateError(null)
     setCliUpdateChecked(true)
+    setCliCommitInfo(null)
+    setCliUpdateBehind(0)
     try {
+      if (cliSourcePath.trim()) {
+        const baseUrl = getApiBaseUrl()
+        const headers = getAuthHeader()
+
+        const res = await fetch(`${baseUrl}/project/update-check`, { headers })
+        if (!res.ok) throw new Error(`update-check failed: HTTP ${res.status}`)
+        const body = await res.json() as { local?: boolean; behind?: number; ahead?: number; errorMsg?: string }
+
+        if (body.errorMsg) {
+          setCliUpdateError(body.errorMsg)
+          return
+        }
+
+        const behind = body.behind ?? 0
+        const ahead = body.ahead ?? 0
+        setCliUpdateBehind(behind)
+        let info: string
+        if (behind === 0 && ahead === 0) {
+          info = '已与 upstream/dev 同步'
+        } else if (behind > 0 && ahead === 0) {
+          info = `落后 upstream/dev ${behind} commits`
+        } else if (behind === 0 && ahead > 0) {
+          info = `领先 upstream/dev ${ahead} commits`
+        } else {
+          info = `落后 ${behind} / 领先 ${ahead} commits`
+        }
+        setCliCommitInfo(info)
+        return
+      }
+
       const response = await fetch(OPENCODE_CLI_RELEASES_API, {
         headers: { Accept: 'application/vnd.github+json' },
       })
@@ -93,19 +134,24 @@ export function AboutSettings() {
     } finally {
       setCliCheckingUpdate(false)
     }
-  }, [cliVersion, cliCheckingUpdate])
+  }, [cliVersion, cliCheckingUpdate, cliSourcePath])
 
   const handleOpenCliReleases = useCallback(() => {
     void openExternalUrl(OPENCODE_CLI_RELEASES_PAGE)
   }, [])
 
-  const cliHasUpdate = cliVersion && cliLatestVersion && compareVersions(cliLatestVersion, cliVersion) > 0
+  const isLocalProject = !!cliSourcePath.trim()
+  const cliHasUpdate = isLocalProject
+    ? cliUpdateBehind > 0
+    : !!(cliVersion && cliLatestVersion && compareVersions(cliLatestVersion, cliVersion) > 0)
 
   let cliUpdateStatusText: string | null = null
   if (cliCheckingUpdate) {
     cliUpdateStatusText = t('about.cliUpdateChecking')
   } else if (cliUpdateError) {
     cliUpdateStatusText = t('about.cliUpdateError', { error: cliUpdateError })
+  } else if (cliCommitInfo) {
+    cliUpdateStatusText = cliCommitInfo
   } else if (cliHasUpdate) {
     cliUpdateStatusText = t('about.cliUpdateAvailable', { version: `v${cliLatestVersion}` })
   } else if (cliUpdateChecked && cliLatestVersion) {
@@ -117,7 +163,7 @@ export function AboutSettings() {
     setCliUpgradeBusy(true)
     setCliUpgradeResult(null)
     try {
-      const result = await upgradeOpencode()
+      const result = await upgradeOpencode({ sourcePath: cliSourcePath })
       setCliUpgradeResult(result)
 
       if (result.success) {
@@ -137,7 +183,7 @@ export function AboutSettings() {
     } finally {
       setCliUpgradeBusy(false)
     }
-  }, [activeServer, cliUpgradeBusy, cliVersion])
+  }, [activeServer, cliUpgradeBusy, cliSourcePath, cliVersion])
 
   const handleExportBackup = useCallback(async () => {
     setBackupError(null)
@@ -245,9 +291,11 @@ export function AboutSettings() {
                 </div>
               </div>
               <div className="rounded-lg border border-border-200/50 bg-bg-000/35 px-3 py-2.5">
-                <div className="text-[length:var(--fs-xs)] text-text-400 mb-1">{t('about.cliLatestRelease')}</div>
+                <div className="text-[length:var(--fs-xs)] text-text-400 mb-1">
+                  {isLocalProject ? t('about.cliLocalDiff') : t('about.cliLatestRelease')}
+                </div>
                 <div className="text-[length:var(--fs-base)] font-semibold text-text-100 font-mono">
-                  {cliLatestVersion ? `v${cliLatestVersion}` : '—'}
+                  {cliCommitInfo ?? (cliLatestVersion ? `v${cliLatestVersion}` : '—')}
                 </div>
               </div>
               <div className="rounded-lg border border-border-200/50 bg-bg-000/35 px-3 py-2.5">
@@ -263,14 +311,30 @@ export function AboutSettings() {
               </div>
             </div>
 
+            {/* 本地源码路径输入框 */}
+            <div>
+              <label className="block text-[length:var(--fs-xs)] font-medium text-text-300 mb-1">
+                {t('about.cliSourcePath')}
+              </label>
+              <input
+                type="text"
+                value={cliSourcePath}
+                onChange={e => setCliSourcePath(e.target.value)}
+                placeholder={t('about.cliSourcePathPlaceholder')}
+                className="w-full h-8 px-3 text-[length:var(--fs-md)] bg-bg-000 border border-border-200 rounded-md focus:outline-none focus:border-accent-main-100/50 text-text-100 placeholder:text-text-400"
+              />
+            </div>
+
             {cliUpdateStatusText && (
               <div
                 className={`rounded-lg border px-3 py-3 text-[length:var(--fs-sm)] leading-relaxed ${
-                  cliHasUpdate
+                  cliCommitInfo
                     ? 'border-accent-main-100/20 bg-accent-main-100/5 text-accent-main-100'
-                    : cliUpdateError
-                      ? 'border-danger-100/20 bg-danger-100/10 text-danger-100'
-                      : 'border-border-200/50 bg-bg-100/35 text-text-300'
+                    : cliHasUpdate
+                      ? 'border-accent-main-100/20 bg-accent-main-100/5 text-accent-main-100'
+                      : cliUpdateError
+                        ? 'border-danger-100/20 bg-danger-100/10 text-danger-100'
+                        : 'border-border-200/50 bg-bg-100/35 text-text-300'
                 }`}
               >
                 <div className="font-medium text-text-100">{cliUpdateStatusText}</div>
