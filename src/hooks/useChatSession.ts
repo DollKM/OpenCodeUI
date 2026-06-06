@@ -35,6 +35,7 @@ import {
   summarizeSession,
   updateSession,
   forkSession,
+  createSession as apiCreateSession,
   extractUserMessageContent,
   type ApiPermissionRequest,
   type ApiSession,
@@ -134,7 +135,7 @@ export function useChatSession({
   // Hooks
   const { resetPermissions } = usePermissions()
   const { currentDirectory } = useDirectory()
-  const { createSession, sessions } = useSessionContext()
+  const { sessions } = useSessionContext()
   const { sendNotification } = useNotification()
 
   const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
@@ -616,6 +617,7 @@ export function useChatSession({
           const sdk = getSDKClient()
           const childResult = unwrap(await sdk.session.create({
             parentID: sessionId ?? undefined,
+            directory: input.directory || undefined,
             title: '图片识别',
           }))
           const childSessionId = childResult.id
@@ -656,9 +658,11 @@ export function useChatSession({
       try {
         if (!sessionId) {
           if (!input.allowCreateSession) return false
-          const newSession = await createSession()
+
+          const newSession = await apiCreateSession({ directory: input.directory })
           sessionId = newSession.id
-          navigateToSession(sessionId, newSession.directory)
+
+          navigateToSession(sessionId, input.directory)
         }
 
         if (rollbackSnapshot) {
@@ -719,7 +723,7 @@ export function useChatSession({
         return false
       }
     },
-    [routeSessionId, navigateToSession, createSession],
+    [routeSessionId, navigateToSession],
   )
 
   const handleConfirmImageResult = useCallback(async () => {
@@ -1002,9 +1006,11 @@ export function useChatSession({
       try {
         // Create session if needed (like handleSend does)
         if (!sessionId) {
-          const newSession = await createSession()
+
+          const newSession = await apiCreateSession({ directory: effectiveDirectory })
           sessionId = newSession.id
-          navigateToSession(sessionId, newSession.directory)
+
+          navigateToSession(sessionId, effectiveDirectory)
         }
 
         if (command === 'compact') {
@@ -1044,7 +1050,7 @@ export function useChatSession({
         return false
       }
     },
-    [routeSessionId, effectiveDirectory, createSession, navigateToSession, currentModel, navigateHome, handleNewChat],
+    [routeSessionId, effectiveDirectory, navigateToSession, currentModel, navigateHome, handleNewChat],
   )
 
   // Undo with animation
