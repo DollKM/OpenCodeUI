@@ -63,6 +63,8 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
   const hasRestoredDirectoryRef = useRef(false)
   const restoreRequestIdRef = useRef(0)
   useEffect(() => {
+    // 面板没打开时不执行
+    if (!bottomPanelOpen) return
     // 目录没变就不重复拉取
     if (hasRestoredDirectoryRef.current && prevDirectoryRef.current === normalizedDirectory) return
     hasRestoredDirectoryRef.current = true
@@ -96,7 +98,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
     }
 
     restoreSessions()
-  }, [normalizedDirectory])
+  }, [normalizedDirectory, bottomPanelOpen])
 
   // 创建新终端
   const handleNewTerminal = useCallback(async () => {
