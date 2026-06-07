@@ -4,6 +4,7 @@
 // ============================================
 
 import { serverStorage } from '../utils/perServerStorage'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // Full Auto 模式：off / session / global
 export type FullAutoMode = 'off' | 'session' | 'global'
@@ -76,6 +77,15 @@ class AutoApproveStore {
       this._enabled = false
       this._approvePendingOnFullAuto = false
     }
+    // 回退到云端数据（没有本地数据时）
+    if (!this._enabled) {
+      const cloud = clientDataStorage.getItem('autoApprove.enabled')
+      if (cloud === 'true') this._enabled = true
+    }
+    // 加载云端规则
+    this.loadRules()
+    // 加载 Full Auto 模式
+    this.loadFullAutoMode()
   }
 
   private notify(): void {
@@ -99,8 +109,11 @@ class AutoApproveStore {
     this.rulesMap.clear()
     this._paneFullAutoModes.clear()
     this._autoReplyRequestIds.clear()
-    if (this._fullAutoMode !== 'off') {
-      this._fullAutoMode = 'off'
+    // 重新加载云端规则
+    this.loadRules()
+    // 重新加载 Full Auto 模式（云端持久化，不再强制设为 off）
+    this.loadFullAutoMode()
+    if (this._fullAutoMode === 'off' && this._paneFullAutoModes.size === 0) {
       this._fullAutoListeners.forEach(fn => fn('off'))
     }
     this.notify()
@@ -120,6 +133,7 @@ class AutoApproveStore {
     this._enabled = value
     try {
       serverStorage.set(this.STORAGE_KEY, String(value))
+      clientDataStorage.setItem('autoApprove.enabled', String(value))
     } catch {
       // ignore
     }
@@ -142,6 +156,7 @@ class AutoApproveStore {
     this._approvePendingOnFullAuto = value
     try {
       serverStorage.set(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO, String(value))
+      clientDataStorage.setItem('autoApprove.approvePendingOnFullAuto', String(value))
     } catch {
       // ignore
     }
@@ -178,6 +193,7 @@ class AutoApproveStore {
     this._fullAutoMode = mode
     this._fullAutoListeners.forEach(fn => fn(mode, sourcePaneId))
     this.notify()
+    this.persistFullAutoMode()
   }
 
   // ---- Per-pane Full Auto 模式 ----
@@ -198,12 +214,14 @@ class AutoApproveStore {
     this._paneFullAutoModes.set(paneId, mode)
     this._fullAutoListeners.forEach(fn => fn(mode, paneId))
     this.notify()
+    this.persistFullAutoMode()
   }
 
   /** 清除指定 pane 的 Full Auto 模式（恢复跟随全局） */
   clearPaneFullAutoMode(paneId: string): void {
     this._paneFullAutoModes.delete(paneId)
     this.notify()
+    this.persistFullAutoMode()
   }
 
   /** 按当前 pane 的生效状态循环：off -> session -> global -> off */
@@ -243,6 +261,54 @@ class AutoApproveStore {
     }
   }
 
+  /**
+   * 从云端加载 Full Auto 模式
+   */
+  private loadFullAutoMode(): void {
+    try {
+      const raw = clientDataStorage.getItem('autoApprove.fullAutoMode')
+      if (raw === 'global') {
+        this._fullAutoMode = 'global'
+      } else if (raw === 'session') {
+        this._fullAutoMode = 'off'
+        // session 模式是 per-pane 的，加载 pane 映射
+        const paneRaw = clientDataStorage.getItem('autoApprove.paneFullAutoModes')
+        if (paneRaw) {
+          const parsed = JSON.parse(paneRaw) as Record<string, FullAutoMode>
+          for (const [paneId, mode] of Object.entries(parsed)) {
+            if (mode === 'session') {
+              this._paneFullAutoModes.set(paneId, mode)
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * 持久化 Full Auto 模式到云端
+   */
+  private persistFullAutoMode(): void {
+    try {
+      if (this._fullAutoMode === 'global') {
+        clientDataStorage.setItem('autoApprove.fullAutoMode', 'global')
+        clientDataStorage.setItem('autoApprove.paneFullAutoModes', '{}')
+      } else {
+        clientDataStorage.setItem('autoApprove.fullAutoMode', 'session')
+        // 持久化 per-pane session 模式
+        const paneObj: Record<string, FullAutoMode> = {}
+        for (const [paneId, mode] of this._paneFullAutoModes) {
+          if (mode === 'session') paneObj[paneId] = mode
+        }
+        clientDataStorage.setItem('autoApprove.paneFullAutoModes', JSON.stringify(paneObj))
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   claimAutoReply(requestId: string): boolean {
     if (this._autoReplyRequestIds.has(requestId)) return false
     this._autoReplyRequestIds.add(requestId)
@@ -260,8 +326,7 @@ class AutoApproveStore {
    * @param patterns 要添加的 pattern 列表
    */
   addRules(sessionId: string, permission: string, patterns: string[]): void {
-    if (!this._enabled) return
-
+    // 无论 enabled 与否，规则都应持久化到云端
     const existing = this.rulesMap.get(sessionId) || []
     const newRules: AutoApproveRule[] = patterns.map(pattern => ({
       permission,
@@ -278,6 +343,8 @@ class AutoApproveStore {
     }
 
     this.rulesMap.set(sessionId, uniqueRules)
+    console.log('[AutoApproveStore] addRules:', sessionId, permission, patterns, '→ 共', uniqueRules.length, '条规则')
+    this.persistRules()
   }
 
   /**
@@ -292,6 +359,7 @@ class AutoApproveStore {
    */
   clearRules(sessionId: string): void {
     this.rulesMap.delete(sessionId)
+    this.persistRules()
   }
 
   /**
@@ -299,6 +367,41 @@ class AutoApproveStore {
    */
   clearAllRules(): void {
     this.rulesMap.clear()
+    this.persistRules()
+  }
+
+  /**
+   * 从云端加载规则
+   */
+  private loadRules(): void {
+    try {
+      const raw = clientDataStorage.getItem('autoApprove.rules')
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, AutoApproveRule[]>
+        for (const [sessionId, rules] of Object.entries(parsed)) {
+          this.rulesMap.set(sessionId, rules)
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * 持久化规则到云端
+   */
+  private persistRules(): void {
+    try {
+      const obj: Record<string, AutoApproveRule[]> = {}
+      for (const [sessionId, rules] of this.rulesMap) {
+        obj[sessionId] = rules
+      }
+      const json = JSON.stringify(obj)
+      console.log('[AutoApproveStore] persistRules:', Object.keys(obj).length, '个会话, 数据大小:', json.length, 'bytes')
+      clientDataStorage.setItem('autoApprove.rules', json)
+    } catch (e) {
+      console.warn('[AutoApproveStore] persistRules 失败:', e)
+    }
   }
 
   /**
