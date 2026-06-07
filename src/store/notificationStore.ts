@@ -9,6 +9,7 @@
 // 由 useGlobalEvents 统一推送，不再由 activeSessionStore 管通知
 
 import { useSyncExternalStore } from 'react'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // ============================================
 // Types
@@ -95,7 +96,7 @@ class NotificationStore {
   /** toast 弹窗总开关 */
   toastEnabled: boolean = (() => {
     try {
-      return localStorage.getItem(TOAST_ENABLED_KEY) !== 'false'
+      return clientDataStorage.getItem(TOAST_ENABLED_KEY) !== 'false'
     } catch {
       return true
     }
@@ -119,7 +120,7 @@ class NotificationStore {
   setToastEnabled(enabled: boolean) {
     this.toastEnabled = enabled
     try {
-      localStorage.setItem(TOAST_ENABLED_KEY, String(enabled))
+      clientDataStorage.setItem(TOAST_ENABLED_KEY, String(enabled))
     } catch {
       // Ignore storage write failures.
     }

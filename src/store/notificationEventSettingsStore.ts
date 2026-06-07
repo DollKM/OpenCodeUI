@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { NotificationType } from './notificationStore'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 export interface NotificationEventConfig {
   systemEnabled: boolean
@@ -32,7 +33,7 @@ function loadSettings(): NotificationEventSettings {
   const defaults = createDefaultSettings()
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = clientDataStorage.getItem(STORAGE_KEY)
     if (!raw) return defaults
 
     const parsed = JSON.parse(raw)
@@ -71,7 +72,7 @@ function loadSettings(): NotificationEventSettings {
 
 function saveSettings(settings: NotificationEventSettings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
   } catch {
     // Ignore storage write failures.
   }

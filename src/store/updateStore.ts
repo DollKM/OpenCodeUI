@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 export interface UpdateRelease {
   version: string
@@ -75,7 +76,7 @@ export function shouldShowUpdateToast(state: UpdateState): boolean {
 
 function loadPersistedState(): PersistedUpdateState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = clientDataStorage.getItem(STORAGE_KEY)
     if (!raw) {
       return { latestRelease: null, lastCheckedAt: null, dismissedVersion: null }
     }
@@ -98,7 +99,7 @@ function persistState(state: UpdateState): void {
       lastCheckedAt: state.lastCheckedAt,
       dismissedVersion: state.dismissedVersion,
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   } catch {
     // Ignore storage write failures.
   }
@@ -264,7 +265,7 @@ export function importUpdateSettingsBackup(raw: unknown): void {
     lastCheckedAt: typeof parsed?.lastCheckedAt === 'number' ? parsed.lastCheckedAt : null,
     dismissedVersion: typeof parsed?.dismissedVersion === 'string' ? parsed.dismissedVersion : null,
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
 }
 
 export function useUpdateStore(): UpdateState {

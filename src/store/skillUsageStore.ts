@@ -1,6 +1,8 @@
 const STORAGE_KEY = 'opencode-skill-usage'
 const STORAGE_KEY_SKILL_NAMES = 'opencode-known-skill-names'
 
+import { clientDataStorage } from '../lib/clientDataStorage'
+
 type Subscriber = () => void
 
 class SkillUsageStore {
@@ -24,7 +26,7 @@ class SkillUsageStore {
 
   private load() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
+      const raw = clientDataStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed: Record<string, number> = JSON.parse(raw)
         for (const [name, count] of Object.entries(parsed)) {
@@ -39,7 +41,7 @@ class SkillUsageStore {
 
   private loadKnownNames() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_SKILL_NAMES)
+      const raw = clientDataStorage.getItem(STORAGE_KEY_SKILL_NAMES)
       if (raw) {
         const names: string[] = JSON.parse(raw)
         for (const name of names) this.knownSkillNames.add(name)
@@ -50,7 +52,7 @@ class SkillUsageStore {
   }
 
   private persistKnownNames() {
-    localStorage.setItem(STORAGE_KEY_SKILL_NAMES, JSON.stringify([...this.knownSkillNames]))
+    clientDataStorage.setItem(STORAGE_KEY_SKILL_NAMES, JSON.stringify([...this.knownSkillNames]))
   }
 
   private persist() {
@@ -58,7 +60,7 @@ class SkillUsageStore {
     for (const [name, count] of this.usage) {
       obj[name] = count
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(obj))
+    clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(obj))
   }
 
   private notify() {
@@ -102,7 +104,7 @@ class SkillUsageStore {
   clearAll() {
     this.usage.clear()
     this.rebuildCache()
-    localStorage.removeItem(STORAGE_KEY)
+    clientDataStorage.removeItem(STORAGE_KEY)
     this.notify()
   }
 }

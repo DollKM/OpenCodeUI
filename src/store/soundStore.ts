@@ -14,6 +14,7 @@
 import { useSyncExternalStore } from 'react'
 import type { NotificationType } from './notificationStore'
 import { DEFAULT_SOUNDS } from '../utils/soundPlayer'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // ============================================
 // Types
@@ -93,7 +94,7 @@ function normalizeEventConfig(type: NotificationType, parsedEvent: unknown): Eve
 
 function loadSettings(): SoundSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = clientDataStorage.getItem(STORAGE_KEY)
     if (!raw) return createDefaultSettings()
     const parsed = JSON.parse(raw)
     // 合并默认值，防止旧版本缺字段
@@ -119,7 +120,7 @@ function loadSettings(): SoundSettings {
 
 function saveSettings(settings: SoundSettings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
   } catch {
     // quota exceeded
   }

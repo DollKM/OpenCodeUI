@@ -68,6 +68,8 @@ export interface ParsedKeybinding {
 
 type Listener = () => void
 
+import { clientDataStorage } from '../lib/clientDataStorage'
+
 const STORAGE_KEY = 'opencode-keybindings'
 
 /**
@@ -624,7 +626,7 @@ class KeybindingStore {
 
     // 然后应用用户自定义
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
+      const stored = clientDataStorage.getItem(STORAGE_KEY)
       if (stored) {
         const customKeys: Record<string, string> = JSON.parse(stored)
         for (const kb of this.keybindings) {
@@ -647,7 +649,7 @@ class KeybindingStore {
           customKeys[kb.action] = kb.currentKey
         }
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(customKeys))
+      clientDataStorage.setItem(STORAGE_KEY, JSON.stringify(customKeys))
     } catch {
       // ignore
     }
