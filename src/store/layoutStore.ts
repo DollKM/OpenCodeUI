@@ -6,7 +6,7 @@
 export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
-export type PanelTabType = 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree' | 'integrations'
+export type PanelTabType = 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree' | 'tools'
 type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
 
 // 统一的面板标签
@@ -650,9 +650,9 @@ export class LayoutStore {
     return this.addSingletonTab('worktree', position, 'worktree')
   }
 
-  // 添加 Integrations 标签（MCP + Skills + Plugins）
-  addIntegrationsTab(position: PanelPosition) {
-    return this.addSingletonTab('integrations', position, 'integrations')
+  // 添加 Tools 标签（工具/插件列表）
+  addToolsTab(position: PanelPosition) {
+    return this.addSingletonTab('tools', position, 'tools')
   }
 
   // 移除 tab

@@ -44,7 +44,7 @@ const TAB_ICONS: Record<PanelTabType, React.ReactNode> = {
   mcp: <PlugIcon size={12} />,
   skill: <TeachIcon size={12} />,
   worktree: <GitWorktreeIcon size={12} />,
-  integrations: <LayersIcon size={12} />,
+  tools: <LayersIcon size={12} />,
 }
 
 // Tab 显示名称
@@ -71,8 +71,8 @@ function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string
       return t('panelContainer.skills')
     case 'worktree':
       return t('panelContainer.worktrees')
-    case 'integrations':
-      return t('panelContainer.integrations')
+    case 'tools':
+      return t('panelContainer.tools')
     default:
       return t('panelContainer.tab')
   }
@@ -472,7 +472,7 @@ export const PanelContainer = memo(function PanelContainer({
             </button>
             <button
               onClick={() => {
-                layoutStore.addIntegrationsTab(position)
+                layoutStore.addToolsTab(position)
                 setAddMenuPos(null)
               }}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
@@ -480,7 +480,7 @@ export const PanelContainer = memo(function PanelContainer({
               <span className="opacity-60 shrink-0">
                 <LayersIcon size={12} />
               </span>
-              {t('panelContainer.integrations')}
+              {t('panelContainer.tools')}
             </button>
             <button
               onClick={() => {
