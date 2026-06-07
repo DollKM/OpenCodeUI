@@ -24,11 +24,11 @@
     "postinstall": "node scripts/copy-material-icons.mjs"
   },
   "dependencies": {
+    "@opencode-ai/sdk": "file:../opencode/packages/sdk/js",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/search": "^6.7.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
-    "@opencode-ai/sdk": "^1.4.1",
     "@streamdown/math": "^1.0.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
