@@ -1,40 +1,41 @@
-/**
- * 主题状态管理 Store
+﻿/**
+ * 涓婚鐘舵€佺鐞?Store
  *
- * 管理：
- * - 主题风格选择（内置预设）
- * - 日夜模式（system / light / dark）
- * - 自定义 CSS 覆盖（可用于覆盖字体等）
- * - CSS 变量注入
+ * 绠＄悊锛?
+ * - 涓婚椋庢牸閫夋嫨锛堝唴缃璁撅級
+ * - 鏃ュ妯″紡锛坰ystem / light / dark锛?
+ * - 鑷畾涔?CSS 瑕嗙洊锛堝彲鐢ㄤ簬瑕嗙洊瀛椾綋绛夛級
+ * - CSS 鍙橀噺娉ㄥ叆
  */
 
 import { getThemePreset, themeColorsToCSSVars, builtinThemes, DEFAULT_THEME_ID } from '../themes'
 import type { ThemePreset, ThemeColors } from '../themes'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // ============================================
 // Color Conversion Utility
 // ============================================
 
 /**
- * 将浏览器 getComputedStyle 返回的任意格式颜色字符串转为 #RRGGBB 十六进制
+ * 灏嗘祻瑙堝櫒 getComputedStyle 杩斿洖鐨勪换鎰忔牸寮忛鑹插瓧绗︿覆杞负 #RRGGBB 鍗佸叚杩涘埗
  *
- * 现代 Chromium WebView 可能返回多种格式：
- * - rgb(29, 36, 50)   — 逗号分隔
- * - rgb(29 36 50)     — 空格分隔 (CSS Color Level 4)
- * - color(srgb 0.11 0.14 0.20) — sRGB 函数
- * - oklch(...)        — OKLab 色彩空间
+ * 鐜颁唬 Chromium WebView 鍙兘杩斿洖澶氱鏍煎紡锛?
+ * - rgb(29, 36, 50)   鈥?閫楀彿鍒嗛殧
+ * - rgb(29 36 50)     鈥?绌烘牸鍒嗛殧 (CSS Color Level 4)
+ * - color(srgb 0.11 0.14 0.20) 鈥?sRGB 鍑芥暟
+ * - oklch(...)        鈥?OKLab 鑹插僵绌洪棿
  *
- * 利用 Canvas 2D 做万能转换，让浏览器自己解析任何合法 CSS 颜色
+ * 鍒╃敤 Canvas 2D 鍋氫竾鑳借浆鎹紝璁╂祻瑙堝櫒鑷繁瑙ｆ瀽浠讳綍鍚堟硶 CSS 棰滆壊
  */
 function computedColorToHex(cssColor: string): string | null {
   try {
     const ctx = document.createElement('canvas').getContext('2d')
     if (!ctx) return null
     ctx.fillStyle = cssColor
-    // ctx.fillStyle 会被浏览器标准化为 #rrggbb 或 rgba(...) 格式
+    // ctx.fillStyle 浼氳娴忚鍣ㄦ爣鍑嗗寲涓?#rrggbb 鎴?rgba(...) 鏍煎紡
     const normalized = ctx.fillStyle
     if (normalized.startsWith('#')) return normalized
-    // 如果返回 rgba/rgb 格式，提取数值转 hex
+    // 濡傛灉杩斿洖 rgba/rgb 鏍煎紡锛屾彁鍙栨暟鍊艰浆 hex
     const match = normalized.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
     if (match) {
       const r = parseInt(match[1], 10)
@@ -62,7 +63,7 @@ export interface CustomCSSSnippet {
   updatedAt: number
 }
 
-/** step-finish 信息栏各项显示开关 */
+/** step-finish 淇℃伅鏍忓悇椤规樉绀哄紑鍏?*/
 export interface StepFinishDisplay {
   tokens: boolean
   cache: boolean
@@ -79,8 +80,8 @@ export type CompletedAtFormat = 'time' | 'dateTime'
 export type ReasoningDisplayMode = 'capsule' | 'italic' | 'markdown'
 
 /**
- * 字号偏移范围：-2 ~ +4（相对于基准值的 px 偏移）
- * 0 = 基准值（index.css 中定义的默认值）
+ * 瀛楀彿鍋忕Щ鑼冨洿锛?2 ~ +4锛堢浉瀵逛簬鍩哄噯鍊肩殑 px 鍋忕Щ锛?
+ * 0 = 鍩哄噯鍊硷紙index.css 涓畾涔夌殑榛樿鍊硷級
  */
 export const FONT_SCALE_MIN = -2
 export const FONT_SCALE_MAX = 4
@@ -90,7 +91,7 @@ function clampFontScale(n: number): number {
   return Math.round(Math.max(FONT_SCALE_MIN, Math.min(FONT_SCALE_MAX, n)))
 }
 
-/** Diff 行标记风格：markers = 传统 +/- 符号, changeBars = 行号左侧彩色竖条 */
+/** Diff 琛屾爣璁伴鏍硷細markers = 浼犵粺 +/- 绗﹀彿, changeBars = 琛屽彿宸︿晶褰╄壊绔栨潯 */
 export type DiffStyle = 'markers' | 'changeBars'
 
 const DEFAULT_STEP_FINISH_DISPLAY: StepFinishDisplay = {
@@ -114,7 +115,7 @@ const DEFAULT_CODE_WORD_WRAP = false
 const DEFAULT_UI_FONT_SCALE = 0
 const DEFAULT_CODE_FONT_SCALE = 0
 
-/** 工具输出渲染风格：classic = 经典（input+output 分离），compact = 精简（只展示 output，header 更矮） */
+/** 宸ュ叿杈撳嚭娓叉煋椋庢牸锛歝lassic = 缁忓吀锛坕nput+output 鍒嗙锛夛紝compact = 绮剧畝锛堝彧灞曠ず output锛宧eader 鏇寸煯锛?*/
 export type ToolCardStyle = 'classic' | 'compact'
 const DEFAULT_TOOL_CARD_STYLE: ToolCardStyle = 'classic'
 const DEFAULT_IMMERSIVE_MODE = false
@@ -124,49 +125,49 @@ const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
 const DEFAULT_MANUAL_TERMINAL_TITLES = false
 
 export interface ThemeState {
-  /** 当前选中的主题风格 ID */
+  /** 褰撳墠閫変腑鐨勪富棰橀鏍?ID */
   presetId: string
-  /** 日夜模式 */
+  /** 鏃ュ妯″紡 */
   colorMode: ColorMode
-  /** 用户自定义 CSS（覆盖 CSS 变量） */
+  /** 鐢ㄦ埛鑷畾涔?CSS锛堣鐩?CSS 鍙橀噺锛?*/
   customCSS: string
-  /** 已保存的自定义 CSS 方案 */
+  /** 宸蹭繚瀛樼殑鑷畾涔?CSS 鏂规 */
   customCSSSnippets: CustomCSSSnippet[]
-  /** 当前选中的已保存方案 ID；仅用于切换/保存，不直接决定渲染 */
+  /** 褰撳墠閫変腑鐨勫凡淇濆瓨鏂规 ID锛涗粎鐢ㄤ簬鍒囨崲/淇濆瓨锛屼笉鐩存帴鍐冲畾娓叉煋 */
   activeCustomCSSSnippetId: string | null
-  /** 是否自动折叠长用户消息 */
+  /** 鏄惁鑷姩鎶樺彔闀跨敤鎴锋秷鎭?*/
   collapseUserMessages: boolean
-  /** step-finish 信息栏显示开关 */
+  /** step-finish 淇℃伅鏍忔樉绀哄紑鍏?*/
   stepFinishDisplay: StepFinishDisplay
-  /** 完成时刻显示格式 */
+  /** 瀹屾垚鏃跺埢鏄剧ず鏍煎紡 */
   completedAtFormat: CompletedAtFormat
-  /** 思考内容展示样式 */
+  /** 鎬濊€冨唴瀹瑰睍绀烘牱寮?*/
   reasoningDisplayMode: ReasoningDisplayMode
-  /** 宽模式 */
+  /** 瀹芥ā寮?*/
   wideMode: boolean
-  /** Diff 行标记风格 */
+  /** Diff 琛屾爣璁伴鏍?*/
   diffStyle: DiffStyle
-  /** 是否启用带工具描述的 steps 摘要 */
+  /** 鏄惁鍚敤甯﹀伐鍏锋弿杩扮殑 steps 鎽樿 */
   descriptiveToolSteps: boolean
-  /** 是否在工具下方内嵌权限/提问请求 */
+  /** 鏄惁鍦ㄥ伐鍏蜂笅鏂瑰唴宓屾潈闄?鎻愰棶璇锋眰 */
   inlineToolRequests: boolean
-  /** 代码块/diff 自动换行 */
+  /** 浠ｇ爜鍧?diff 鑷姩鎹㈣ */
   codeWordWrap: boolean
-  /** UI 字号偏移 (px)，0 = 基准 */
+  /** UI 瀛楀彿鍋忕Щ (px)锛? = 鍩哄噯 */
   uiFontScale: number
-  /** 代码 / diff / 终端字号偏移 (px)，0 = 基准 */
+  /** 浠ｇ爜 / diff / 缁堢瀛楀彿鍋忕Щ (px)锛? = 鍩哄噯 */
   codeFontScale: number
-  /** 工具输出渲染风格 */
+  /** 宸ュ叿杈撳嚭娓叉煋椋庢牸 */
   toolCardStyle: ToolCardStyle
-  /** 沉浸模式 */
+  /** 娌夋蹈妯″紡 */
   immersiveMode: boolean
-  /** 内嵌权限精简模式：ToolBody 有内容时只显示操作按钮 */
+  /** 鍐呭祵鏉冮檺绮剧畝妯″紡锛歍oolBody 鏈夊唴瀹规椂鍙樉绀烘搷浣滄寜閽?*/
   compactInlinePermission: boolean
-  /** 毛玻璃效果开关（backdrop-filter blur） */
+  /** 姣涚幓鐠冩晥鏋滃紑鍏筹紙backdrop-filter blur锛?*/
   glassEffect: boolean
-  /** 忙碌时后续消息是否进入队列 */
+  /** 蹇欑鏃跺悗缁秷鎭槸鍚﹁繘鍏ラ槦鍒?*/
   queueFollowupMessages: boolean
-  /** 终端标签是否改为手动命名模式 */
+  /** 缁堢鏍囩鏄惁鏀逛负鎵嬪姩鍛藉悕妯″紡 */
   manualTerminalTitles: boolean
 }
 
@@ -237,18 +238,18 @@ class ThemeStore {
   private listeners = new Set<() => void>()
 
   constructor() {
-    const savedPreset = localStorage.getItem(STORAGE_KEY_PRESET) || DEFAULT_THEME_ID
+    const savedPreset = clientDataStorage.getItem(STORAGE_KEY_PRESET) || DEFAULT_THEME_ID
     const normalizedPreset = getThemePreset(savedPreset) ? savedPreset : DEFAULT_THEME_ID
-    const savedMode = (localStorage.getItem(STORAGE_KEY_COLOR_MODE) as ColorMode) || 'system'
-    const savedCSS = localStorage.getItem(STORAGE_KEY_CUSTOM_CSS) || ''
-    const customCSSSnippets = parseCustomCSSSnippets(localStorage.getItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS))
-    const savedActiveCustomCSSSnippetId = localStorage.getItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
+    const savedMode = (clientDataStorage.getItem(STORAGE_KEY_COLOR_MODE) as ColorMode) || 'system'
+    const savedCSS = clientDataStorage.getItem(STORAGE_KEY_CUSTOM_CSS) || ''
+    const customCSSSnippets = parseCustomCSSSnippets(clientDataStorage.getItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS))
+    const savedActiveCustomCSSSnippetId = clientDataStorage.getItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
     const activeCustomCSSSnippetId = customCSSSnippets.some(item => item.id === savedActiveCustomCSSSnippetId)
       ? savedActiveCustomCSSSnippetId
       : null
-    const savedCollapse = localStorage.getItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES)
+    const savedCollapse = clientDataStorage.getItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES)
     const collapseUserMessages = savedCollapse === null ? true : savedCollapse === 'true'
-    const savedReasoningDisplay = localStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
+    const savedReasoningDisplay = clientDataStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
     const reasoningDisplayMode: ReasoningDisplayMode =
       savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
         ? savedReasoningDisplay
@@ -256,61 +257,61 @@ class ThemeStore {
 
     let stepFinishDisplay = DEFAULT_STEP_FINISH_DISPLAY
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_STEP_FINISH_DISPLAY)
+      const saved = clientDataStorage.getItem(STORAGE_KEY_STEP_FINISH_DISPLAY)
       if (saved) stepFinishDisplay = { ...DEFAULT_STEP_FINISH_DISPLAY, ...JSON.parse(saved) }
     } catch {
       /* ignore */
     }
 
-    const savedCompletedAtFormat = localStorage.getItem(STORAGE_KEY_COMPLETED_AT_FORMAT)
+    const savedCompletedAtFormat = clientDataStorage.getItem(STORAGE_KEY_COMPLETED_AT_FORMAT)
     const completedAtFormat: CompletedAtFormat =
       savedCompletedAtFormat === 'dateTime' ? 'dateTime' : DEFAULT_COMPLETED_AT_FORMAT
 
-    const savedWideMode = localStorage.getItem(STORAGE_KEY_WIDE_MODE) === 'true'
-    const savedDiffStyle = localStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
+    const savedWideMode = clientDataStorage.getItem(STORAGE_KEY_WIDE_MODE) === 'true'
+    const savedDiffStyle = clientDataStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
     const diffStyle: DiffStyle = savedDiffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE
 
-    const savedDescriptiveToolSteps = localStorage.getItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS)
+    const savedDescriptiveToolSteps = clientDataStorage.getItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS)
     const descriptiveToolSteps =
       savedDescriptiveToolSteps === null ? DEFAULT_DESCRIPTIVE_TOOL_STEPS : savedDescriptiveToolSteps === 'true'
 
-    const savedInlineToolRequests = localStorage.getItem(STORAGE_KEY_INLINE_TOOL_REQUESTS)
+    const savedInlineToolRequests = clientDataStorage.getItem(STORAGE_KEY_INLINE_TOOL_REQUESTS)
     const inlineToolRequests =
       savedInlineToolRequests === null ? DEFAULT_INLINE_TOOL_REQUESTS : savedInlineToolRequests === 'true'
 
-    const savedCodeWordWrap = localStorage.getItem(STORAGE_KEY_CODE_WORD_WRAP)
+    const savedCodeWordWrap = clientDataStorage.getItem(STORAGE_KEY_CODE_WORD_WRAP)
     const codeWordWrap = savedCodeWordWrap === 'true' ? true : DEFAULT_CODE_WORD_WRAP
 
-    const savedFontScale = localStorage.getItem(STORAGE_KEY_FONT_SCALE)
+    const savedFontScale = clientDataStorage.getItem(STORAGE_KEY_FONT_SCALE)
     const uiFontScale = savedFontScale !== null ? clampFontScale(Number(savedFontScale)) : DEFAULT_UI_FONT_SCALE
 
-    const savedCodeFontScale = localStorage.getItem(STORAGE_KEY_CODE_FONT_SCALE)
+    const savedCodeFontScale = clientDataStorage.getItem(STORAGE_KEY_CODE_FONT_SCALE)
     const codeFontScale =
       savedCodeFontScale !== null ? clampFontScale(Number(savedCodeFontScale)) : DEFAULT_CODE_FONT_SCALE
 
-    const savedToolCardStyle = localStorage.getItem(STORAGE_KEY_TOOL_CARD_STYLE) as ToolCardStyle | null
+    const savedToolCardStyle = clientDataStorage.getItem(STORAGE_KEY_TOOL_CARD_STYLE) as ToolCardStyle | null
     const toolCardStyle: ToolCardStyle =
       savedToolCardStyle === 'classic' || savedToolCardStyle === 'compact'
         ? savedToolCardStyle
         : DEFAULT_TOOL_CARD_STYLE
 
-    const savedImmersiveMode = localStorage.getItem(STORAGE_KEY_IMMERSIVE_MODE)
+    const savedImmersiveMode = clientDataStorage.getItem(STORAGE_KEY_IMMERSIVE_MODE)
     const immersiveMode = savedImmersiveMode === 'true' ? true : DEFAULT_IMMERSIVE_MODE
 
-    const savedCompactInlinePermission = localStorage.getItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION)
+    const savedCompactInlinePermission = clientDataStorage.getItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION)
     const compactInlinePermission =
       savedCompactInlinePermission === null
         ? DEFAULT_COMPACT_INLINE_PERMISSION
         : savedCompactInlinePermission === 'true'
 
-    const savedGlassEffect = localStorage.getItem(STORAGE_KEY_GLASS_EFFECT)
+    const savedGlassEffect = clientDataStorage.getItem(STORAGE_KEY_GLASS_EFFECT)
     const glassEffect = savedGlassEffect === null ? DEFAULT_GLASS_EFFECT : savedGlassEffect === 'true'
 
-    const savedQueueFollowupMessages = localStorage.getItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES)
+    const savedQueueFollowupMessages = clientDataStorage.getItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES)
     const queueFollowupMessages =
       savedQueueFollowupMessages === null ? DEFAULT_QUEUE_FOLLOWUP_MESSAGES : savedQueueFollowupMessages === 'true'
 
-    const savedManualTerminalTitles = localStorage.getItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES)
+    const savedManualTerminalTitles = clientDataStorage.getItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES)
     const manualTerminalTitles =
       savedManualTerminalTitles === null ? DEFAULT_MANUAL_TERMINAL_TITLES : savedManualTerminalTitles === 'true'
 
@@ -413,12 +414,12 @@ class ThemeStore {
     return this.state.manualTerminalTitles
   }
 
-  /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
+  /** 鑾峰彇褰撳墠涓婚棰勮锛堝唴缃富棰樿繑鍥炲璞★紝鑷畾涔夎繑鍥?undefined锛?*/
   getPreset(): ThemePreset | undefined {
     return getThemePreset(this.state.presetId)
   }
 
-  /** 获取所有可用主题列表 */
+  /** 鑾峰彇鎵€鏈夊彲鐢ㄤ富棰樺垪琛?*/
   getAvailablePresets(): { id: string; name: string; description: string }[] {
     return builtinThemes.map(t => ({
       id: t.id,
@@ -427,7 +428,7 @@ class ThemeStore {
     }))
   }
 
-  /** 解析实际生效的暗/亮模式 */
+  /** 瑙ｆ瀽瀹為檯鐢熸晥鐨勬殫/浜ā寮?*/
   getResolvedMode(): 'light' | 'dark' {
     if (this.state.colorMode === 'system') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -444,7 +445,7 @@ class ThemeStore {
   setPreset(id: string) {
     if (this.state.presetId === id) return
     this.state = { ...this.state, presetId: id }
-    localStorage.setItem(STORAGE_KEY_PRESET, id)
+    clientDataStorage.setItem(STORAGE_KEY_PRESET, id)
     this.applyTheme()
     this.emit()
   }
@@ -452,14 +453,14 @@ class ThemeStore {
   setColorMode(mode: ColorMode) {
     if (this.state.colorMode === mode) return
     this.state = { ...this.state, colorMode: mode }
-    localStorage.setItem(STORAGE_KEY_COLOR_MODE, mode)
+    clientDataStorage.setItem(STORAGE_KEY_COLOR_MODE, mode)
     this.applyTheme()
     this.emit()
   }
 
   setCustomCSS(css: string) {
     this.state = { ...this.state, customCSS: css }
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS, css)
+    clientDataStorage.setItem(STORAGE_KEY_CUSTOM_CSS, css)
     this.applyCustomCSS()
     this.emit()
   }
@@ -477,7 +478,7 @@ class ThemeStore {
     const customCSSSnippets = [...this.state.customCSSSnippets, snippet]
     this.state = { ...this.state, customCSSSnippets, activeCustomCSSSnippetId: snippet.id }
     this.persistCustomCSSSnippets(customCSSSnippets)
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, snippet.id)
+    clientDataStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, snippet.id)
     this.emit()
     return snippet
   }
@@ -501,9 +502,9 @@ class ThemeStore {
     this.persistCustomCSSSnippets(customCSSSnippets)
 
     if (activeCustomCSSSnippetId) {
-      localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, activeCustomCSSSnippetId)
+      clientDataStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, activeCustomCSSSnippetId)
     } else {
-      localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
+      clientDataStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
     }
 
     this.emit()
@@ -519,8 +520,8 @@ class ThemeStore {
       activeCustomCSSSnippetId: id,
     }
 
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS, snippet.css)
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, id)
+    clientDataStorage.setItem(STORAGE_KEY_CUSTOM_CSS, snippet.css)
+    clientDataStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, id)
     this.applyCustomCSS()
     this.emit()
   }
@@ -528,42 +529,42 @@ class ThemeStore {
   clearActiveCustomCSSSnippet() {
     if (this.state.activeCustomCSSSnippetId === null) return
     this.state = { ...this.state, activeCustomCSSSnippetId: null }
-    localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
+    clientDataStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
     this.emit()
   }
 
   setCollapseUserMessages(enabled: boolean) {
     if (this.state.collapseUserMessages === enabled) return
     this.state = { ...this.state, collapseUserMessages: enabled }
-    localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(enabled))
     this.emit()
   }
 
   setStepFinishDisplay(display: Partial<StepFinishDisplay>) {
     const next = { ...this.state.stepFinishDisplay, ...display }
     this.state = { ...this.state, stepFinishDisplay: next }
-    localStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(next))
+    clientDataStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(next))
     this.emit()
   }
 
   setCompletedAtFormat(format: CompletedAtFormat) {
     if (this.state.completedAtFormat === format) return
     this.state = { ...this.state, completedAtFormat: format }
-    localStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, format)
+    clientDataStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, format)
     this.emit()
   }
 
   setReasoningDisplayMode(mode: ReasoningDisplayMode) {
     if (this.state.reasoningDisplayMode === mode) return
     this.state = { ...this.state, reasoningDisplayMode: mode }
-    localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, mode)
+    clientDataStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, mode)
     this.emit()
   }
 
   setWideMode(enabled: boolean) {
     if (this.state.wideMode === enabled) return
     this.state = { ...this.state, wideMode: enabled }
-    localStorage.setItem(STORAGE_KEY_WIDE_MODE, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_WIDE_MODE, String(enabled))
     this.emit()
   }
 
@@ -574,28 +575,28 @@ class ThemeStore {
   setDiffStyle(style: DiffStyle) {
     if (this.state.diffStyle === style) return
     this.state = { ...this.state, diffStyle: style }
-    localStorage.setItem(STORAGE_KEY_DIFF_STYLE, style)
+    clientDataStorage.setItem(STORAGE_KEY_DIFF_STYLE, style)
     this.emit()
   }
 
   setDescriptiveToolSteps(enabled: boolean) {
     if (this.state.descriptiveToolSteps === enabled) return
     this.state = { ...this.state, descriptiveToolSteps: enabled }
-    localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
     this.emit()
   }
 
   setInlineToolRequests(enabled: boolean) {
     if (this.state.inlineToolRequests === enabled) return
     this.state = { ...this.state, inlineToolRequests: enabled }
-    localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
     this.emit()
   }
 
   setCodeWordWrap(enabled: boolean) {
     if (this.state.codeWordWrap === enabled) return
     this.state = { ...this.state, codeWordWrap: enabled }
-    localStorage.setItem(STORAGE_KEY_CODE_WORD_WRAP, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_CODE_WORD_WRAP, String(enabled))
     this.emit()
   }
 
@@ -603,7 +604,7 @@ class ThemeStore {
     const clamped = clampFontScale(scale)
     if (this.state.uiFontScale === clamped) return
     this.state = { ...this.state, uiFontScale: clamped }
-    localStorage.setItem(STORAGE_KEY_FONT_SCALE, String(clamped))
+    clientDataStorage.setItem(STORAGE_KEY_FONT_SCALE, String(clamped))
     this.applyFontScale()
     this.emit()
   }
@@ -612,7 +613,7 @@ class ThemeStore {
     const clamped = clampFontScale(scale)
     if (this.state.codeFontScale === clamped) return
     this.state = { ...this.state, codeFontScale: clamped }
-    localStorage.setItem(STORAGE_KEY_CODE_FONT_SCALE, String(clamped))
+    clientDataStorage.setItem(STORAGE_KEY_CODE_FONT_SCALE, String(clamped))
     this.applyFontScale()
     this.emit()
   }
@@ -620,7 +621,7 @@ class ThemeStore {
   setToolCardStyle(style: ToolCardStyle) {
     if (this.state.toolCardStyle === style) return
     this.state = { ...this.state, toolCardStyle: style }
-    localStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, style)
+    clientDataStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, style)
     this.emit()
   }
 
@@ -629,31 +630,31 @@ class ThemeStore {
     this.state = {
       ...this.state,
       immersiveMode: enabled,
-      // 联动四个子功能
+      // 鑱斿姩鍥涗釜瀛愬姛鑳?
       inlineToolRequests: enabled,
       descriptiveToolSteps: enabled,
       toolCardStyle: enabled ? 'compact' : 'classic',
       compactInlinePermission: enabled,
     }
-    localStorage.setItem(STORAGE_KEY_IMMERSIVE_MODE, String(enabled))
-    localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
-    localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
-    localStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, enabled ? 'compact' : 'classic')
-    localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_IMMERSIVE_MODE, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, enabled ? 'compact' : 'classic')
+    clientDataStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
     this.emit()
   }
 
   setCompactInlinePermission(enabled: boolean) {
     if (this.state.compactInlinePermission === enabled) return
     this.state = { ...this.state, compactInlinePermission: enabled }
-    localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(enabled))
     this.emit()
   }
 
   setGlassEffect(enabled: boolean) {
     if (this.state.glassEffect === enabled) return
     this.state = { ...this.state, glassEffect: enabled }
-    localStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(enabled))
     this.applyGlassClass()
     this.emit()
   }
@@ -661,26 +662,149 @@ class ThemeStore {
   setQueueFollowupMessages(enabled: boolean) {
     if (this.state.queueFollowupMessages === enabled) return
     this.state = { ...this.state, queueFollowupMessages: enabled }
-    localStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(enabled))
     this.emit()
   }
 
   setManualTerminalTitles(enabled: boolean) {
     if (this.state.manualTerminalTitles === enabled) return
     this.state = { ...this.state, manualTerminalTitles: enabled }
-    localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(enabled))
+    clientDataStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(enabled))
     this.emit()
   }
 
   // ---- Theme Application ----
 
-  /** 初始化：应用当前主题到 DOM */
+  /**
+   * 从 clientDataStorage 重新加载所有状态并重新应用
+   * 在 clientDataStorage.init() 完成云端拉取后调用
+   */
+  reloadFromCloud() {
+    const savedPreset = clientDataStorage.getItem(STORAGE_KEY_PRESET) || DEFAULT_THEME_ID
+    const normalizedPreset = getThemePreset(savedPreset) ? savedPreset : DEFAULT_THEME_ID
+    const savedMode = (clientDataStorage.getItem(STORAGE_KEY_COLOR_MODE) as ColorMode) || 'system'
+    const savedCSS = clientDataStorage.getItem(STORAGE_KEY_CUSTOM_CSS) || ''
+    const customCSSSnippets = parseCustomCSSSnippets(clientDataStorage.getItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS))
+    const savedActiveCustomCSSSnippetId = clientDataStorage.getItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
+    const activeCustomCSSSnippetId = customCSSSnippets.some(item => item.id === savedActiveCustomCSSSnippetId)
+      ? savedActiveCustomCSSSnippetId
+      : null
+    const savedCollapse = clientDataStorage.getItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES)
+    const collapseUserMessages = savedCollapse === null ? true : savedCollapse === 'true'
+    const savedReasoningDisplay = clientDataStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
+    const reasoningDisplayMode: ReasoningDisplayMode =
+      savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
+        ? savedReasoningDisplay
+        : DEFAULT_REASONING_DISPLAY_MODE
+    let stepFinishDisplay = DEFAULT_STEP_FINISH_DISPLAY
+    try {
+      const saved = clientDataStorage.getItem(STORAGE_KEY_STEP_FINISH_DISPLAY)
+      if (saved) stepFinishDisplay = { ...DEFAULT_STEP_FINISH_DISPLAY, ...JSON.parse(saved) }
+    } catch { /* ignore */ }
+    const savedCompletedAtFormat = clientDataStorage.getItem(STORAGE_KEY_COMPLETED_AT_FORMAT)
+    const completedAtFormat: CompletedAtFormat =
+      savedCompletedAtFormat === 'dateTime' ? 'dateTime' : DEFAULT_COMPLETED_AT_FORMAT
+    const savedWideMode = clientDataStorage.getItem(STORAGE_KEY_WIDE_MODE) === 'true'
+    const savedDiffStyle = clientDataStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
+    const diffStyle: DiffStyle = savedDiffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE
+    const savedDescriptiveToolSteps = clientDataStorage.getItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS)
+    const descriptiveToolSteps =
+      savedDescriptiveToolSteps === null ? DEFAULT_DESCRIPTIVE_TOOL_STEPS : savedDescriptiveToolSteps === 'true'
+    const savedInlineToolRequests = clientDataStorage.getItem(STORAGE_KEY_INLINE_TOOL_REQUESTS)
+    const inlineToolRequests =
+      savedInlineToolRequests === null ? DEFAULT_INLINE_TOOL_REQUESTS : savedInlineToolRequests === 'true'
+    const savedCodeWordWrap = clientDataStorage.getItem(STORAGE_KEY_CODE_WORD_WRAP)
+    const codeWordWrap = savedCodeWordWrap === 'true' ? true : DEFAULT_CODE_WORD_WRAP
+    const savedFontScale = clientDataStorage.getItem(STORAGE_KEY_FONT_SCALE)
+    const uiFontScale = savedFontScale !== null ? clampFontScale(Number(savedFontScale)) : DEFAULT_UI_FONT_SCALE
+    const savedCodeFontScale = clientDataStorage.getItem(STORAGE_KEY_CODE_FONT_SCALE)
+    const codeFontScale = savedCodeFontScale !== null ? clampFontScale(Number(savedCodeFontScale)) : DEFAULT_CODE_FONT_SCALE
+    const savedToolCardStyle = clientDataStorage.getItem(STORAGE_KEY_TOOL_CARD_STYLE) as ToolCardStyle | null
+    const toolCardStyle: ToolCardStyle =
+      savedToolCardStyle === 'classic' || savedToolCardStyle === 'compact' ? savedToolCardStyle : DEFAULT_TOOL_CARD_STYLE
+    const savedImmersiveMode = clientDataStorage.getItem(STORAGE_KEY_IMMERSIVE_MODE)
+    const immersiveMode = savedImmersiveMode === 'true' ? true : DEFAULT_IMMERSIVE_MODE
+    const savedCompactInlinePermission = clientDataStorage.getItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION)
+    const compactInlinePermission =
+      savedCompactInlinePermission === null ? DEFAULT_COMPACT_INLINE_PERMISSION : savedCompactInlinePermission === 'true'
+    const savedGlassEffect = clientDataStorage.getItem(STORAGE_KEY_GLASS_EFFECT)
+    const glassEffect = savedGlassEffect === null ? DEFAULT_GLASS_EFFECT : savedGlassEffect === 'true'
+    const savedQueueFollowupMessages = clientDataStorage.getItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES)
+    const queueFollowupMessages =
+      savedQueueFollowupMessages === null ? DEFAULT_QUEUE_FOLLOWUP_MESSAGES : savedQueueFollowupMessages === 'true'
+    const savedManualTerminalTitles = clientDataStorage.getItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES)
+    const manualTerminalTitles =
+      savedManualTerminalTitles === null ? DEFAULT_MANUAL_TERMINAL_TITLES : savedManualTerminalTitles === 'true'
+
+    const newState: ThemeState = {
+      presetId: normalizedPreset,
+      colorMode: savedMode,
+      customCSS: savedCSS,
+      customCSSSnippets,
+      activeCustomCSSSnippetId,
+      collapseUserMessages,
+      stepFinishDisplay,
+      completedAtFormat,
+      reasoningDisplayMode,
+      wideMode: savedWideMode,
+      diffStyle,
+      descriptiveToolSteps,
+      inlineToolRequests,
+      codeWordWrap,
+      uiFontScale,
+      codeFontScale,
+      toolCardStyle,
+      immersiveMode,
+      compactInlinePermission,
+      glassEffect,
+      queueFollowupMessages,
+      manualTerminalTitles,
+    }
+
+    // 检查是否真的有变化，避免无效 emit 触发 React 重渲染
+    const changed =
+      newState.presetId !== this.state.presetId ||
+      newState.colorMode !== this.state.colorMode ||
+      newState.customCSS !== this.state.customCSS ||
+      newState.collapseUserMessages !== this.state.collapseUserMessages ||
+      newState.wideMode !== this.state.wideMode ||
+      newState.diffStyle !== this.state.diffStyle ||
+      newState.descriptiveToolSteps !== this.state.descriptiveToolSteps ||
+      newState.inlineToolRequests !== this.state.inlineToolRequests ||
+      newState.codeWordWrap !== this.state.codeWordWrap ||
+      newState.uiFontScale !== this.state.uiFontScale ||
+      newState.codeFontScale !== this.state.codeFontScale ||
+      newState.toolCardStyle !== this.state.toolCardStyle ||
+      newState.immersiveMode !== this.state.immersiveMode ||
+      newState.compactInlinePermission !== this.state.compactInlinePermission ||
+      newState.glassEffect !== this.state.glassEffect ||
+      newState.queueFollowupMessages !== this.state.queueFollowupMessages ||
+      newState.manualTerminalTitles !== this.state.manualTerminalTitles ||
+      newState.reasoningDisplayMode !== this.state.reasoningDisplayMode ||
+      newState.completedAtFormat !== this.state.completedAtFormat ||
+      JSON.stringify(newState.stepFinishDisplay) !== JSON.stringify(this.state.stepFinishDisplay) ||
+      JSON.stringify(newState.customCSSSnippets) !== JSON.stringify(this.state.customCSSSnippets) ||
+      newState.activeCustomCSSSnippetId !== this.state.activeCustomCSSSnippetId
+
+    if (!changed) {
+      console.log('[ThemeStore] reloadFromCloud 无变化，跳过')
+      return
+    }
+
+    this.state = newState
+
+    console.log('[ThemeStore] 已从云端重新加载主题配置:', this.state.presetId, this.state.colorMode)
+    this.applyTheme()
+    this.emit()
+  }
+
+  /** 鍒濆鍖栵細搴旂敤褰撳墠涓婚鍒?DOM */
   init() {
     this.applyTheme()
     this.applyFontScale()
     this.applyGlassClass()
 
-    // 监听系统主题变化
+    // 鐩戝惉绯荤粺涓婚鍙樺寲
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     mediaQuery.addEventListener('change', () => {
       if (this.state.colorMode === 'system') {
@@ -690,35 +814,35 @@ class ThemeStore {
     })
   }
 
-  /** 将主题 CSS 变量注入到 DOM */
+  /** 灏嗕富棰?CSS 鍙橀噺娉ㄥ叆鍒?DOM */
   applyTheme() {
     const root = document.documentElement
     const resolvedMode = this.getResolvedMode()
 
-    // 1. 设置 data-mode（驱动 CSS 中日/夜模式相关的非颜色规则，以及 Terminal、Shiki 等联动）
+    // 1. 璁剧疆 data-mode锛堥┍鍔?CSS 涓棩/澶滄ā寮忕浉鍏崇殑闈為鑹茶鍒欙紝浠ュ強 Terminal銆丼hiki 绛夎仈鍔級
     if (this.state.colorMode === 'system') {
       root.removeAttribute('data-mode')
     } else {
       root.setAttribute('data-mode', this.state.colorMode)
     }
 
-    // 2. 注入主题颜色变量
+    // 2. 娉ㄥ叆涓婚棰滆壊鍙橀噺
     const preset = this.getPreset()
     if (preset) {
       const colors: ThemeColors = resolvedMode === 'dark' ? preset.dark : preset.light
       this.injectThemeStyle(colors)
     }
 
-    // 3. 应用自定义 CSS
+    // 3. 搴旂敤鑷畾涔?CSS
     this.applyCustomCSS()
 
-    // 4. 更新 meta theme-color
+    // 4. 鏇存柊 meta theme-color
     requestAnimationFrame(() => {
       const bg = getComputedStyle(root).getPropertyValue('--color-bg-100').trim()
       if (!bg) return
 
-      // 将计算后的颜色统一转为 HEX 格式，避免不同浏览器/WebView 返回
-      // 不同格式（rgb, oklch, color(srgb ...)）导致 Android 原生端解析失败或色差
+      // 灏嗚绠楀悗鐨勯鑹茬粺涓€杞负 HEX 鏍煎紡锛岄伩鍏嶄笉鍚屾祻瑙堝櫒/WebView 杩斿洖
+      // 涓嶅悓鏍煎紡锛坮gb, oklch, color(srgb ...)锛夊鑷?Android 鍘熺敓绔В鏋愬け璐ユ垨鑹插樊
       const hex = computedColorToHex(bg)
       if (!hex) return
 
@@ -742,17 +866,17 @@ class ThemeStore {
       document.head.appendChild(el)
     }
 
-    // 用高优先级选择器覆盖 :root 中的默认值
-    // 使用 :root:root 提升特异性，确保覆盖 index.css 中的所有定义
+    // 鐢ㄩ珮浼樺厛绾ч€夋嫨鍣ㄨ鐩?:root 涓殑榛樿鍊?
+    // 浣跨敤 :root:root 鎻愬崌鐗瑰紓鎬э紝纭繚瑕嗙洊 index.css 涓殑鎵€鏈夊畾涔?
     el.textContent = `:root:root {\n  ${themeColorsToCSSVars(colors)}\n}`
   }
 
   /**
-   * 字号偏移覆盖。
-   * 两个维度均为 0 时不注入覆盖，直接用 index.css :root 里的默认值。
-   * 非零时通过 :root:root 高优先级覆盖 --fs-* 变量。
+   * 瀛楀彿鍋忕Щ瑕嗙洊銆?
+   * 涓や釜缁村害鍧囦负 0 鏃朵笉娉ㄥ叆瑕嗙洊锛岀洿鎺ョ敤 index.css :root 閲岀殑榛樿鍊笺€?
+   * 闈為浂鏃堕€氳繃 :root:root 楂樹紭鍏堢骇瑕嗙洊 --fs-* 鍙橀噺銆?
    *
-   * 基准值（偏移 0）：
+   * 鍩哄噯鍊硷紙鍋忕Щ 0锛夛細
    *   UI:   xxs=11  xs=12  sm=13  md=13  base=14  lg=16
    *         heading-3=16  heading-2=18  heading-1=20
    *   Code: code=13  code-line-height=24  terminal=13  terminal-line-height=1.4
@@ -790,7 +914,7 @@ class ThemeStore {
 
     if (code !== 0) {
       const codePx = 13 + code
-      // 行高 = 基准 24 + 偏移 * 2（每 1px 字号对应 2px 行高增量）
+      // 琛岄珮 = 鍩哄噯 24 + 鍋忕Щ * 2锛堟瘡 1px 瀛楀彿瀵瑰簲 2px 琛岄珮澧為噺锛?
       const lineH = 24 + code * 2
       const termPx = 13 + code
       const termLH = Math.round((1.4 + code * 0.05) * 100) / 100
@@ -822,7 +946,7 @@ class ThemeStore {
     el.textContent = css
   }
 
-  /** 毛玻璃开关：data-glass 属性驱动 CSS */
+  /** 姣涚幓鐠冨紑鍏筹細data-glass 灞炴€ч┍鍔?CSS */
   private applyGlassClass() {
     const root = document.documentElement
     if (this.state.glassEffect) {
@@ -833,7 +957,7 @@ class ThemeStore {
   }
 
   private persistCustomCSSSnippets(customCSSSnippets: CustomCSSSnippet[]) {
-    localStorage.setItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS, JSON.stringify(customCSSSnippets))
+    clientDataStorage.setItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS, JSON.stringify(customCSSSnippets))
   }
 
   // ---- Subscription (useSyncExternalStore compatible) ----
@@ -926,30 +1050,30 @@ export function exportThemeBackup(): ThemeBackup {
 
 export function importThemeBackup(raw: unknown): void {
   const backup = normalizeThemeBackup(raw)
-  localStorage.setItem(STORAGE_KEY_PRESET, backup.presetId)
-  localStorage.setItem(STORAGE_KEY_COLOR_MODE, backup.colorMode)
-  localStorage.setItem(STORAGE_KEY_CUSTOM_CSS, backup.customCSS)
-  localStorage.setItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS, JSON.stringify(backup.customCSSSnippets))
+  clientDataStorage.setItem(STORAGE_KEY_PRESET, backup.presetId)
+  clientDataStorage.setItem(STORAGE_KEY_COLOR_MODE, backup.colorMode)
+  clientDataStorage.setItem(STORAGE_KEY_CUSTOM_CSS, backup.customCSS)
+  clientDataStorage.setItem(STORAGE_KEY_CUSTOM_CSS_SNIPPETS, JSON.stringify(backup.customCSSSnippets))
   if (backup.activeCustomCSSSnippetId) {
-    localStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, backup.activeCustomCSSSnippetId)
+    clientDataStorage.setItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID, backup.activeCustomCSSSnippetId)
   } else {
-    localStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
+    clientDataStorage.removeItem(STORAGE_KEY_ACTIVE_CUSTOM_CSS_SNIPPET_ID)
   }
-  localStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(backup.collapseUserMessages))
-  localStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(backup.stepFinishDisplay))
-  localStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, backup.completedAtFormat)
-  localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, backup.reasoningDisplayMode)
-  localStorage.setItem(STORAGE_KEY_WIDE_MODE, String(backup.wideMode))
-  localStorage.setItem(STORAGE_KEY_DIFF_STYLE, backup.diffStyle)
-  localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(backup.descriptiveToolSteps))
-  localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(backup.inlineToolRequests))
-  localStorage.setItem(STORAGE_KEY_CODE_WORD_WRAP, String(backup.codeWordWrap))
-  localStorage.setItem(STORAGE_KEY_FONT_SCALE, String(backup.uiFontScale))
-  localStorage.setItem(STORAGE_KEY_CODE_FONT_SCALE, String(backup.codeFontScale))
-  localStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, backup.toolCardStyle)
-  localStorage.setItem(STORAGE_KEY_IMMERSIVE_MODE, String(backup.immersiveMode))
-  localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(backup.compactInlinePermission))
-  localStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(backup.glassEffect))
-  localStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(backup.queueFollowupMessages))
-  localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
+  clientDataStorage.setItem(STORAGE_KEY_COLLAPSE_USER_MESSAGES, String(backup.collapseUserMessages))
+  clientDataStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(backup.stepFinishDisplay))
+  clientDataStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, backup.completedAtFormat)
+  clientDataStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, backup.reasoningDisplayMode)
+  clientDataStorage.setItem(STORAGE_KEY_WIDE_MODE, String(backup.wideMode))
+  clientDataStorage.setItem(STORAGE_KEY_DIFF_STYLE, backup.diffStyle)
+  clientDataStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(backup.descriptiveToolSteps))
+  clientDataStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(backup.inlineToolRequests))
+  clientDataStorage.setItem(STORAGE_KEY_CODE_WORD_WRAP, String(backup.codeWordWrap))
+  clientDataStorage.setItem(STORAGE_KEY_FONT_SCALE, String(backup.uiFontScale))
+  clientDataStorage.setItem(STORAGE_KEY_CODE_FONT_SCALE, String(backup.codeFontScale))
+  clientDataStorage.setItem(STORAGE_KEY_TOOL_CARD_STYLE, backup.toolCardStyle)
+  clientDataStorage.setItem(STORAGE_KEY_IMMERSIVE_MODE, String(backup.immersiveMode))
+  clientDataStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(backup.compactInlinePermission))
+  clientDataStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(backup.glassEffect))
+  clientDataStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(backup.queueFollowupMessages))
+  clientDataStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
 }
