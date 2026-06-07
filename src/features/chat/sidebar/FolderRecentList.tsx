@@ -212,7 +212,6 @@ export function FolderRecentList({
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
   const allBusySessions = useBusySessions()
   const allNotifications = useNotifications()
-  const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects])
 
   // 当 projects 列表变化时，过滤掉已不存在的展开项 + 确保当前目录对应的 project 展开
   useEffect(() => {
@@ -533,8 +532,6 @@ function FolderRecentSection({
                   selectedSessionIds={selectedSessionIds}
                   onToggleSessionSelection={onToggleSessionSelection}
                   folderStatusByWorkspaceDirectory={workspaceFolderStatusByDirectory}
-                  draggableWorkspaceDirectories={draggableWorkspaceDirectories}
-                  onReorderWorkspace={onReorderWorkspace}
                 />
               ) : filteredSessions.length === 0 ? (
                 <div className="px-2 py-1 text-[length:var(--fs-xs)] text-text-400/50">
@@ -657,10 +654,11 @@ function WorkspaceFolderList({
       ...createDirectoryProject(directory, 'workspace'),
     }))
   }, [workspaceDirectories])
-  const workspaceById = useMemo(
-    () => new Map(workspaceProjects.map(project => [project.id, project])),
-    [workspaceProjects],
-  )
+  // workspaceById kept for future use
+  // const workspaceById = useMemo(
+  //   () => new Map(workspaceProjects.map(project => [project.id, project])),
+  //   [workspaceProjects],
+  // )
   const [workspaceExpandedIds, setWorkspaceExpandedIds] = useState<string[]>(() =>
     getInitialExpandedProjectIds(workspaceProjects, currentDirectory),
   )

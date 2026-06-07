@@ -130,7 +130,6 @@ export function SidePanel({
     setCurrentDirectory,
     removeDirectory,
     addDirectory,
-    reorderDirectories,
   } = useDirectory()
   const catalogDirectories = useMemo(
     () =>
@@ -455,25 +454,25 @@ export function SidePanel({
     return buildProjectGroups(savedDirectories)
   }, [buildProjectGroups, savedDirectories])
 
-  const selectorProjectGroups = useMemo<ProjectItem[]>(() => {
-    const sortedDirectories = [...savedDirectories].sort((a, b) => b.addedAt - a.addedAt)
+  // const selectorProjectGroups = useMemo<ProjectItem[]>(() => {
+  //   const sortedDirectories = [...savedDirectories].sort((a, b) => b.addedAt - a.addedAt)
+  //
+  //   return buildProjectGroups(sortedDirectories)
+  // }, [buildProjectGroups, savedDirectories])
 
-    return buildProjectGroups(sortedDirectories)
-  }, [buildProjectGroups, savedDirectories])
-
-  const projectStatusMap = useMemo(() => {
-    const map = new Map<string, ProjectStatus>()
-
-    for (const entry of busySessions) {
-      for (const project of selectorProjectGroups) {
-        if (matchesProjectDirectory(entry.directory, project)) {
-          map.set(project.id, 'working')
-        }
-      }
-    }
-
-    return map
-  }, [busySessions, selectorProjectGroups])
+  // const projectStatusMap = useMemo(() => {
+  //   const map = new Map<string, ProjectStatus>()
+  //
+  //   for (const entry of busySessions) {
+  //     for (const project of selectorProjectGroups) {
+  //       if (matchesProjectDirectory(entry.directory, project)) {
+  //         map.set(project.id, 'working')
+  //       }
+  //     }
+  //   }
+  //
+  //   return map
+  // }, [busySessions, selectorProjectGroups])
 
   const currentProject = useMemo<ProjectItem | null>(() => {
     if (!currentDirectory) return null
@@ -1060,6 +1059,18 @@ export function SidePanel({
           </div>
         </div>
 
+        {/* New Chat */}
+        <div className="px-3 pb-2">
+          <button
+            type="button"
+            onClick={onNewSession}
+            className="w-full flex items-center gap-2 h-8 px-3 rounded-lg bg-accent-main-100/10 hover:bg-accent-main-100/20 text-accent-main-100 hover:text-accent-main-100 active:scale-[0.97] transition-all duration-200 border border-accent-main-100/20"
+          >
+            <PlusIcon size={16} />
+            <span className="text-[length:var(--fs-sm)] font-medium">{t('sidebar.newChat')}</span>
+          </button>
+        </div>
+
         {/* Tab Bar: Recents / Active */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex items-center mx-2 gap-1 shrink-0">
@@ -1168,14 +1179,12 @@ export function SidePanel({
                 <FolderRecentList
                   projects={mergedProjects}
                   {...commonFolderRecentListProps}
-                  onReorderProject={handleReorderProjectGroup}
                   workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
                 />
               ) : shouldRenderWorkspaceTreeOnly ? (
                 <FolderRecentList
                   projects={currentProjectTreeProjects}
                   {...commonFolderRecentListProps}
-                  onReorderProject={reorderDirectories}
                 />
               ) : shouldWaitForWorkspaceResolution ? (
                 <div className="flex h-full items-center justify-center text-text-400/70">

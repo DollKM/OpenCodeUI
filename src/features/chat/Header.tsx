@@ -9,11 +9,10 @@ import {
   GitCommitIcon,
   PlugIcon,
   TeachIcon,
-  GitWorktreeIcon,
+  LayersIcon,
   TerminalIcon,
   FolderIcon,
   EllipsisIcon,
-  PlusIcon,
 } from '../../components/Icons'
 import { IconButton, DropdownMenu, MenuItem } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
@@ -38,7 +37,6 @@ interface HeaderProps {
   selectedModelKey: string | null
   onModelChange: (modelKey: string, model: ModelInfo) => void
   onOpenSidebar?: () => void
-  onNewSession?: () => void
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
   modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
@@ -127,7 +125,6 @@ export function Header({
   selectedModelKey,
   onModelChange,
   onOpenSidebar,
-  onNewSession,
   isPaneFullscreen = false,
   onTogglePaneFullscreen,
   modelSelectorRef,
@@ -284,7 +281,17 @@ export function Header({
         )}
 
         {!isCompact && (
-          <>
+          <ModelSelector
+            ref={modelSelectorRef}
+            models={models}
+            selectedModelKey={selectedModelKey}
+            onSelect={onModelChange}
+            isLoading={modelsLoading}
+          />
+        )}
+
+        {isCompact && (
+          <div className="flex items-center gap-1 min-w-0 shrink-1">
             <ModelSelector
               ref={modelSelectorRef}
               models={models}
@@ -292,21 +299,9 @@ export function Header({
               onSelect={onModelChange}
               isLoading={modelsLoading}
             />
-            {onNewSession && (
-              <button
-                type="button"
-                onClick={onNewSession}
-                aria-label={t('sidebar.newChat')}
-                className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-main-100/10 hover:bg-accent-main-100/20 text-accent-main-100 hover:text-accent-main-100 active:scale-[0.97] transition-all duration-200 shrink-0 border border-accent-main-100/20"
-              >
-                <PlusIcon size={16} />
-                <span className="text-[length:var(--fs-sm)] font-medium whitespace-nowrap">{t('sidebar.newChat')}</span>
-              </button>
-            )}
-          </>
+            <div className="min-w-0 shrink">{titleControl}</div>
+          </div>
         )}
-
-        {isCompact && <div className="min-w-0">{titleControl}</div>}
       </div>
 
       {!isCompact && <div className="absolute left-1/2 -translate-x-1/2 flex z-20">{titleControl}</div>}
@@ -353,9 +348,9 @@ export function Header({
                   onClick={() => { layoutStore.addMcpTab('right'); setMoreMenuOpen(false) }}
                 />
                 <MenuItem
-                  icon={<GitWorktreeIcon size={16} />}
-                  label={t('header.worktrees')}
-                  onClick={() => { layoutStore.addWorktreeTab('right'); setMoreMenuOpen(false) }}
+                  icon={<LayersIcon size={16} />}
+                  label={t('header.tools')}
+                  onClick={() => { layoutStore.addToolsTab('right'); setMoreMenuOpen(false) }}
                 />
                 <MenuItem
                   icon={<TerminalIcon size={16} />}
@@ -418,12 +413,12 @@ export function Header({
             </IconButton>
 
             <IconButton
-              aria-label={t('header.worktrees')}
-              onClick={() => layoutStore.addWorktreeTab('right')}
+              aria-label={t('header.tools')}
+              onClick={() => layoutStore.addToolsTab('right')}
               className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-              title={t('header.worktrees')}
+              title={t('header.tools')}
             >
-              <GitWorktreeIcon size={18} />
+              <LayersIcon size={18} />
             </IconButton>
 
             <IconButton
