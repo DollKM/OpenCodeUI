@@ -13,3 +13,11 @@ export async function getSkills(directory?: string): Promise<SkillList> {
   const sdk = getSDKClient()
   return unwrap(await sdk.app.skills({ directory: formatPathForApi(directory) }))
 }
+
+/**
+ * 卸载指定 Skill
+ */
+export async function deleteSkill(name: string, directory?: string): Promise<void> {
+  const sdk = getSDKClient()
+  await unwrap(await sdk.app.deleteSkill({ name, directory: formatPathForApi(directory) }))
+}

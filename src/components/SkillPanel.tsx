@@ -13,8 +13,9 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   SearchIcon,
+  TrashIcon,
 } from './Icons'
-import { getSkills } from '../api/skill'
+import { getSkills, deleteSkill } from '../api/skill'
 import type { Skill } from '../types/api/skill'
 import { useDirectory } from '../hooks'
 import { apiErrorHandler } from '../utils'
@@ -64,7 +65,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
   const filteredSkills = skills.filter(
     skill =>
       skill.name.toLowerCase().includes(filter.toLowerCase()) ||
-      skill.description.toLowerCase().includes(filter.toLowerCase()),
+      (skill.description ?? '').toLowerCase().includes(filter.toLowerCase()),
   )
 
   // Sort by usage descending, preserve original order for ties
@@ -75,6 +76,16 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
     if (usageB !== usageA) return usageB - usageA
     return (originalOrder.get(a.name) ?? 0) - (originalOrder.get(b.name) ?? 0)
   })
+
+  const handleDeleteSkill = useCallback(async (name: string) => {
+    try {
+      await deleteSkill(name, currentDirectory)
+      setSkills(prev => prev.filter(s => s.name !== name))
+    } catch (err) {
+      apiErrorHandler('uninstall skill', err)
+      throw err
+    }
+  }, [currentDirectory])
 
   return (
     <div className="flex flex-col h-full bg-bg-100">
@@ -152,7 +163,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
             </div>
             <div className="flex-1 overflow-auto p-1">
               {sortedSkills.map(skill => (
-                <SkillItem key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} />
+                <SkillItem key={skill.name} skill={skill} usage={skillUsage[skill.name] ?? 0} onDelete={handleDeleteSkill} />
               ))}
             </div>
           </div>
@@ -166,8 +177,21 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
 // SkillItem Component
 // ============================================
 
-const SkillItem = memo(function SkillItem({ skill, usage }: { skill: Skill; usage: number }) {
+const SkillItem = memo(function SkillItem({ skill, usage, onDelete }: { skill: Skill; usage: number; onDelete: (name: string) => Promise<void> }) {
   const [expanded, setExpanded] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const { t } = useTranslation(['components', 'common'])
+
+  const handleUninstall = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!window.confirm(t('skillPanel.uninstallConfirm', { name: skill.name }))) return
+    setDeleting(true)
+    try {
+      await onDelete(skill.name)
+    } catch {
+      setDeleting(false)
+    }
+  }, [skill.name, onDelete, t])
 
   return (
     <div className="group">
@@ -183,8 +207,18 @@ const SkillItem = memo(function SkillItem({ skill, usage }: { skill: Skill; usag
 
         <div className="flex-1 min-w-0">
           <div className="text-[length:var(--fs-base)] text-text-100 font-medium">{skill.name}</div>
-          <div className="text-[length:var(--fs-sm)] text-text-400 truncate">{skill.description}</div>
+          <div className="text-[length:var(--fs-sm)] text-text-400 truncate">{skill.description ?? ''}</div>
         </div>
+        <button
+          type="button"
+          onClick={handleUninstall}
+          disabled={deleting}
+          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-text-400 opacity-0 group-hover:opacity-100 hover:bg-danger-100/10 hover:text-danger-100 transition-all disabled:opacity-50"
+          title={t('skillPanel.uninstall')}
+        >
+          <TrashIcon size={12} />
+          {deleting && <span className="text-[length:var(--fs-xs)]">{t('skillPanel.uninstalling')}</span>}
+        </button>
         <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
           {usage}
         </span>
@@ -192,7 +226,18 @@ const SkillItem = memo(function SkillItem({ skill, usage }: { skill: Skill; usag
 
       {expanded && (
         <div className="mx-2 mb-2 ml-7 rounded-md border border-border-200/40 bg-bg-100/50 px-3 py-2">
-          <div className="text-[length:var(--fs-sm)] text-text-500 mb-2 font-mono break-all">{skill.location}</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[length:var(--fs-sm)] text-text-500 font-mono break-all">{skill.location}</div>
+            <button
+              type="button"
+              onClick={handleUninstall}
+              disabled={deleting}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--fs-xs)] rounded-md bg-danger-100/10 text-danger-100 hover:bg-danger-100 hover:text-bg-000 transition-colors disabled:opacity-50"
+            >
+              <TrashIcon size={11} />
+              {deleting ? t('skillPanel.uninstalling') : t('skillPanel.uninstall')}
+            </button>
+          </div>
           <div className="bg-bg-200/50 rounded-md p-2 overflow-x-auto">
             <pre className="text-[length:var(--fs-sm)] text-text-200 font-mono whitespace-pre-wrap break-words">{skill.content}</pre>
           </div>

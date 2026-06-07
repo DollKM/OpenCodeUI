@@ -38,7 +38,7 @@
     "changes": "变更",
     "mcp": "MCP",
     "skills": "技能",
-    "integrations": "集成",
+    "tools": "工具",
     "worktrees": "Worktrees",
     "tab": "标签",
     "addTab": "添加标签",
@@ -114,13 +114,14 @@
     "loadingSkills": "加载技能中...",
     "failedToLoad": "加载技能失败",
     "noSkills": "暂无可用技能",
-    "clearUsage": "清除使用记录"
+    "clearUsage": "清除使用记录",
+    "uninstall": "卸载",
+    "uninstallConfirm": "确定要卸载技能「{{name}}」吗？",
+    "uninstalling": "卸载中...",
+    "failedToUninstall": "卸载技能失败"
   },
-  "integrationsPanel": {
-    "title": "集成",
-    "mcpServers": "MCP",
-    "skills": "技能",
-    "plugins": "工具",
+  "toolsPanel": {
+    "title": "工具",
     "filterPlugins": "搜索工具...",
     "failedToLoadPlugins": "加载工具列表失败",
     "noPlugins": "暂无可用工具"
@@ -177,7 +178,8 @@
   },
   "contentBlock": {
     "fullscreen": "全屏",
-    "exitCode": "exit {{code}}"
+    "exitCode": "exit {{code}}",
+    "openInEditor": "在编辑器中打开"
   },
   "diffView": {
     "fullscreenView": "全屏查看"

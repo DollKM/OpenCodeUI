@@ -38,7 +38,7 @@
     "changes": "Changes",
     "mcp": "MCP",
     "skills": "Skills",
-    "integrations": "Integrations",
+    "tools": "Tools",
     "worktrees": "Worktrees",
     "tab": "Tab",
     "addTab": "Add Tab",
@@ -115,13 +115,14 @@
     "loadingSkills": "Loading skills...",
     "failedToLoad": "Failed to load skills",
     "noSkills": "No skills found",
-    "clearUsage": "Clear usage"
+    "clearUsage": "Clear usage",
+    "uninstall": "Uninstall",
+    "uninstallConfirm": "Uninstall skill \"{{name}}\"?",
+    "uninstalling": "Uninstalling...",
+    "failedToUninstall": "Failed to uninstall skill"
   },
-  "integrationsPanel": {
-    "title": "Integrations",
-    "mcpServers": "MCP",
-    "skills": "Skills",
-    "plugins": "Tools",
+  "toolsPanel": {
+    "title": "Tools",
     "filterPlugins": "Filter tools...",
     "failedToLoadPlugins": "Failed to load tools",
     "noPlugins": "No tools available"
@@ -179,7 +180,8 @@
   },
   "contentBlock": {
     "fullscreen": "Fullscreen",
-    "exitCode": "exit {{code}}"
+    "exitCode": "exit {{code}}",
+    "openInEditor": "Open in editor"
   },
   "diffView": {
     "fullscreenView": "Fullscreen"

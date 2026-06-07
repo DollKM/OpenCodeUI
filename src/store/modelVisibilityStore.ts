@@ -3,15 +3,27 @@ import type { ModelInfo } from '../types/ui'
 import { serverStorage } from '../utils/perServerStorage'
 import { getModelKey } from '../utils/modelUtils'
 import { serverStore } from './serverStore'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 type Listener = () => void
 
 const STORAGE_KEY_HIDDEN_MODELS = 'hidden-model-keys'
 
 function loadHiddenModelKeys(): string[] {
+  // 1. 尝试从本地 per-server storage 读取
   const stored = serverStorage.getJSON<unknown>(STORAGE_KEY_HIDDEN_MODELS)
-  if (!Array.isArray(stored)) return []
-  return stored.filter((item): item is string => typeof item === 'string')
+  if (Array.isArray(stored)) {
+    return stored.filter((item): item is string => typeof item === 'string')
+  }
+  // 2. 回退到云端数据
+  const cloud = clientDataStorage.getItem('models.hidden')
+  if (cloud) {
+    try {
+      const parsed = JSON.parse(cloud)
+      if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string')
+    } catch { /* ignore */ }
+  }
+  return []
 }
 
 class ModelVisibilityStore {
@@ -33,6 +45,8 @@ class ModelVisibilityStore {
 
   private persist() {
     serverStorage.setJSON(STORAGE_KEY_HIDDEN_MODELS, this.snapshot)
+    // 同步到云端
+    clientDataStorage.setItem('models.hidden', JSON.stringify(this.snapshot))
   }
 
   private reload() {

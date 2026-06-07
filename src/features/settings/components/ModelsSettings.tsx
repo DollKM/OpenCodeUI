@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CloseIcon, SearchIcon } from '../../../components/Icons'
+import { CloseIcon, SearchIcon, EyeIcon } from '../../../components/Icons'
 import { useModels } from '../../../hooks'
 import { modelVisibilityStore, useHiddenModelKeys } from '../../../store'
 import {
@@ -216,8 +216,15 @@ export function ModelsSettings() {
                             }}
                             className="min-w-0 flex-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-main-100 rounded-md"
                           >
-                            <div className="text-[length:var(--fs-md)] font-medium text-text-100 truncate">
-                              {model.name}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[length:var(--fs-md)] font-medium text-text-100 truncate">
+                                {model.name}
+                              </span>
+                              {model.supportsImages && (
+                                <span aria-hidden="true" className="opacity-75 shrink-0">
+                                  <EyeIcon size={13} />
+                                </span>
+                              )}
                             </div>
                             <div className="text-[length:var(--fs-xs)] text-text-400 mt-0.5 truncate">
                               {model.id}

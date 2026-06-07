@@ -17,6 +17,8 @@ interface DialogProps {
   rawContent?: boolean
   /** 允许触摸设备点击遮罩关闭，默认关闭以避免误触 */
   allowTouchBackdropClose?: boolean
+  /** 允许桌面端点击遮罩关闭，默认开启以保持现有行为 */
+  allowBackdropClose?: boolean
 }
 
 export function Dialog({
@@ -30,6 +32,7 @@ export function Dialog({
   showCloseButton = true,
   rawContent = false,
   allowTouchBackdropClose = false,
+  allowBackdropClose = true,
 }: DialogProps) {
   const { t } = useTranslation(['common'])
   // Animation state
@@ -158,10 +161,11 @@ export function Dialog({
   const mouseDownOnBackdrop = useRef(false)
   const handleBackdropPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (!allowBackdropClose) return
       if (e.pointerType === 'touch' && !allowTouchBackdropClose) return
       mouseDownOnBackdrop.current = e.target === e.currentTarget
     },
-    [allowTouchBackdropClose],
+    [allowBackdropClose, allowTouchBackdropClose],
   )
   const handleBackdropClick = useCallback(
     (_e: React.MouseEvent) => {

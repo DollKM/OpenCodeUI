@@ -7,10 +7,10 @@
  * - Loading 状态 -> Skeleton
  */
 
-import { memo, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { memo, useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
-import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
+import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon, ExternalLinkIcon } from './Icons'
 import { CopyButton } from './ui'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { CodePreview } from './CodePreview'
@@ -18,6 +18,8 @@ import { detectLanguage } from '../utils/languageUtils'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
+import { useDirectory } from '../contexts/useDirectory'
+import { isTauri } from '../utils/tauri'
 
 // ============================================
 // Types
@@ -94,6 +96,34 @@ export const ContentBlock = memo(function ContentBlock({
 
   // 响应式 maxHeight，外部传入的值优先
   const responsiveMaxHeight = useResponsiveMaxHeight()
+
+  const { currentDirectory } = useDirectory()
+
+  // 解析文件绝对路径
+  const resolvedAbsolutePath = useMemo(() => {
+    if (!filePath) return undefined
+    // 已经是绝对路径（Unix / 开头 或 Windows 盘符）
+    if (filePath.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(filePath)) {
+      return filePath
+    }
+    // 相对路径 → 拼接项目目录
+    if (currentDirectory) {
+      return `${currentDirectory.replace(/\\/g, '/')}/${filePath.replace(/\\/g, '/')}`
+    }
+    return undefined
+  }, [filePath, currentDirectory])
+
+  const handleOpenInEditor = useCallback(() => {
+    if (!resolvedAbsolutePath) return
+    const uri = `vscode://file/${resolvedAbsolutePath}`
+    if (isTauri()) {
+      import('@tauri-apps/plugin-opener')
+        .then(mod => mod.openUrl(uri))
+        .catch(() => window.open(uri))
+    } else {
+      window.open(uri)
+    }
+  }, [resolvedAbsolutePath])
 
   const isError = variant === 'error'
   const maxHeight = maxHeightProp ?? responsiveMaxHeight
@@ -230,6 +260,20 @@ export const ContentBlock = memo(function ContentBlock({
                 <span className="text-text-500">{t('common:noChanges')}</span>
               )}
             </div>
+          )}
+
+          {/* Open in editor button */}
+          {resolvedAbsolutePath && (
+            <button
+              className="p-0.5 text-text-400 hover:text-accent-main-100 rounded transition-colors"
+              onClick={e => {
+                e.stopPropagation()
+                handleOpenInEditor()
+              }}
+              title={t('contentBlock.openInEditor')}
+            >
+              <ExternalLinkIcon size={13} />
+            </button>
           )}
 
           {/* Fullscreen button - 支持 diff 和代码 */}
