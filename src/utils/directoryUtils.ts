@@ -10,6 +10,7 @@
 //
 
 import { serverStorage } from './perServerStorage'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // ============================================
 // Path Mode Configuration
@@ -90,6 +91,7 @@ export function setPathMode(mode: PathMode): void {
   _pathMode = mode
   try {
     serverStorage.set(STORAGE_KEY_PATH_MODE, mode)
+    clientDataStorage.setItem('opencode-path-mode', mode)
   } catch {
     // ignore
   }
@@ -119,6 +121,7 @@ export function setDetectedPathStyle(style: DetectedPathStyle): void {
   _detectedStyle = style
   try {
     serverStorage.set(STORAGE_KEY_DETECTED_STYLE, style)
+    clientDataStorage.setItem('opencode-detected-path-style', style)
   } catch {
     // ignore
   }

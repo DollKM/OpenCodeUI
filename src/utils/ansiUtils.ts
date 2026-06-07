@@ -6,16 +6,22 @@
  * - parseAnsi: 解析为带颜色信息的 segments，用于渲染彩色终端输出
  */
 
-// ANSI escape sequence 正则
-// 匹配 CSI (Control Sequence Introducer) 序列：ESC[ ... 终止符
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*m/g
 
+// eslint-disable-next-line no-control-regex
+const STRIP_ANSI_RE = /(?:\x1b\[[0-9;?]*[a-zA-Z])|(?:\x1b\].*?(?:\x1b\\|\x07))|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g
+
 /**
- * 去掉所有 ANSI escape codes
+ * 去掉所有 ANSI escape codes 和控制字符
+ *
+ * 处理类型：
+ * - CSI 序列（光标移动、擦除、颜色等）：ESC[ ... 字母
+ * - OSC 序列（窗口标题等）：ESC] ... (ESC\ | BEL)
+ * - C0 控制字符
  */
 export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '')
+  return text.replace(STRIP_ANSI_RE, '')
 }
 
 // ============================================

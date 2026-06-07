@@ -20,6 +20,8 @@ for (const path in modules) {
   resources[lang][ns] = modules[path].default ?? modules[path]
 }
 
+import { clientDataStorage } from './lib/clientDataStorage'
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -37,5 +39,10 @@ i18n
       lookupLocalStorage: 'i18nextLng',
     },
   })
+
+// 语言切换时同步到云端
+i18n.on('languageChanged', (lng) => {
+  clientDataStorage.setItem('i18nextLng', lng)
+})
 
 export default i18n

@@ -19,6 +19,7 @@ import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
 import { notificationStore } from './store/notificationStore'
+import { clientDataStorage } from './lib/clientDataStorage'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
 // 统一补齐，避免业务层 scattered fallback。
@@ -64,6 +65,10 @@ serverStore.onServerChange(() => {
   if (isTauri()) {
     void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server switch', err))
   }
+
+  // 重新拉取云端设置
+  clientDataStorage.onReady(() => themeStore.reloadFromCloud())
+  void clientDataStorage.init().catch(err => apiErrorHandler('reinitialize client data storage after server switch', err))
 
   // 1. 清空内存中的 session/消息数据
   messageStore.clearAll()
@@ -171,6 +176,11 @@ function bootstrap() {
   if (isNativeTauri) {
     void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
   }
+
+  // 初始化云端设置同步（静默拉取，不影响 UI 渲染）
+  // 注册主题重载回调：init 完成后用云端数据刷新主题
+  clientDataStorage.onReady(() => themeStore.reloadFromCloud())
+  void clientDataStorage.init().catch(err => apiErrorHandler('initialize client data storage', err))
 }
 
 void bootstrap()

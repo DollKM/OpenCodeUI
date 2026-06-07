@@ -6,6 +6,7 @@
 
 import type { ModelInfo } from '../api'
 import { serverStorage } from './perServerStorage'
+import { clientDataStorage } from '../lib/clientDataStorage'
 
 // ============================================
 // 模型唯一标识
@@ -195,6 +196,9 @@ export interface CommitModelSelection {
 
 export function getCommitModel(): CommitModelSelection | null {
   try {
+    // 优先读云端
+    const cloud = clientDataStorage.getItem('models.commit')
+    if (cloud) return JSON.parse(cloud)
     const stored = serverStorage.get(COMMIT_MODEL_STORAGE_KEY)
     return stored ? JSON.parse(stored) : null
   } catch {
@@ -205,6 +209,7 @@ export function getCommitModel(): CommitModelSelection | null {
 export function saveCommitModel(selection: CommitModelSelection): void {
   try {
     serverStorage.set(COMMIT_MODEL_STORAGE_KEY, JSON.stringify(selection))
+    clientDataStorage.setItem('models.commit', JSON.stringify(selection))
   } catch (e) {
     console.warn('Failed to save commit model:', e)
   }
@@ -213,6 +218,7 @@ export function saveCommitModel(selection: CommitModelSelection): void {
 export function clearCommitModel(): void {
   try {
     serverStorage.remove(COMMIT_MODEL_STORAGE_KEY)
+    clientDataStorage.setItem('models.commit', '')
   } catch (e) {
     console.warn('Failed to clear commit model:', e)
   }
@@ -445,6 +451,9 @@ const IMAGE_RECOGNITION_MODEL_KEY = 'global-image-recognition-model'
 
 export function getImageRecognitionModel(): { modelKey: string; providerId: string; modelId: string } | null {
   try {
+    // 优先读云端
+    const cloud = clientDataStorage.getItem('models.imageRecognition')
+    if (cloud) return JSON.parse(cloud)
     const stored = serverStorage.get(IMAGE_RECOGNITION_MODEL_KEY)
     return stored ? JSON.parse(stored) : null
   } catch {
@@ -455,6 +464,7 @@ export function getImageRecognitionModel(): { modelKey: string; providerId: stri
 export function saveImageRecognitionModel(selection: { modelKey: string; providerId: string; modelId: string }): void {
   try {
     serverStorage.set(IMAGE_RECOGNITION_MODEL_KEY, JSON.stringify(selection))
+    clientDataStorage.setItem('models.imageRecognition', JSON.stringify(selection))
   } catch (e) {
     console.warn('Failed to save image recognition model:', e)
   }
@@ -463,6 +473,7 @@ export function saveImageRecognitionModel(selection: { modelKey: string; provide
 export function clearImageRecognitionModel(): void {
   try {
     serverStorage.remove(IMAGE_RECOGNITION_MODEL_KEY)
+    clientDataStorage.setItem('models.imageRecognition', '')
   } catch (e) {
     console.warn('Failed to clear image recognition model:', e)
   }
