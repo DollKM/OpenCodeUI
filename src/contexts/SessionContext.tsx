@@ -286,8 +286,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
       await apiDeleteSession(id, targetDir)
-      childSessionStore.clearChildren(id)
-      followupQueueStore.clearSession(id)
       clearSessionRuntimeState(id)
       setSessions(prev => {
         const updated = prev.filter(s => s.id !== id)

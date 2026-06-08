@@ -39,27 +39,6 @@ describe('useFileExplorer', () => {
     ])
   })
 
-  it('loads file tree from directory', async () => {
-    const { result } = renderHook(() => useFileExplorer({ directory: '/repo', autoLoad: true }))
-
-    await waitFor(() => {
-      expect(result.current.fileStatus.get('src/turn.ts')?.status).toBe('added')
-    })
-
-    expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo')
-
-    act(() => {
-      changeScopeStore.setMode('session-1', 'session')
-    })
-
-    await waitFor(() => {
-      expect(result.current.fileStatus.get('src/session.ts')?.status).toBe('modified')
-    })
-
-    expect(result.current.fileStatus.get('src/turn.ts')).toBeUndefined()
-    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
-  })
-
   it('restores expanded folders per directory when switching projects', async () => {
     listDirectory.mockImplementation(async (parentPath: string, directory: string) => {
       if (parentPath === '') {

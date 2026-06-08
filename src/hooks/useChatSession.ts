@@ -651,7 +651,6 @@ export function useChatSession({
           return false
         }
       }
-      }
 
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
 

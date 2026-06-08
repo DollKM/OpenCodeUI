@@ -5,7 +5,7 @@ import {
   DESKTOP_TITLEBAR_HEIGHT,
   DESKTOP_TITLEBAR_Z_INDEX,
 } from '../constants'
-import { ChevronLeftIcon, ChevronRightIcon, FolderOpenIcon, SettingsIcon, AppWindowIcon } from './Icons'
+import { ChevronLeftIcon, ChevronRightIcon, FolderOpenIcon, SettingsIcon } from './Icons'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
 import { getDesktopPlatform, usesCustomDesktopTitlebar } from '../utils/tauri'

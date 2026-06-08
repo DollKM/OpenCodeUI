@@ -780,6 +780,7 @@ class ThemeStore {
       glassEffect,
       queueFollowupMessages,
       manualTerminalTitles,
+      externalFileDropMode: this.state.externalFileDropMode,
     }
 
     // 检查是否真的有变化，避免无效 emit 触发 React 重渲染

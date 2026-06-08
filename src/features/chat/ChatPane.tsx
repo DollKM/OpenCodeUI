@@ -280,7 +280,6 @@ export const ChatPane = memo(function ChatPane({
     handleUndoWithAnimation,
     handleRedoWithAnimation,
     handleForkMessage,
-    handleRegenerate,
     handleNewSession,
     handleVisibleMessageIdsChange,
     handleArchiveSession,
