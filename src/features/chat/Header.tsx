@@ -11,7 +11,6 @@ import {
   TeachIcon,
   LayersIcon,
   TerminalIcon,
-  FolderIcon,
   EllipsisIcon,
 } from '../../components/Icons'
 import { IconButton, DropdownMenu, MenuItem } from '../../components/ui'
@@ -357,11 +356,6 @@ export function Header({
                   label={t('header.terminal')}
                   onClick={() => { handleOpenTerminal(); setMoreMenuOpen(false) }}
                 />
-                <MenuItem
-                  icon={<FolderIcon size={16} />}
-                  label={t('header.files')}
-                  onClick={() => { layoutStore.addFilesTab('right'); setMoreMenuOpen(false) }}
-                />
                 {onTogglePaneFullscreen && (
                   <MenuItem
                     icon={isPaneFullscreen ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
@@ -428,15 +422,6 @@ export function Header({
               title={t('header.terminal')}
             >
               <TerminalIcon size={18} />
-            </IconButton>
-
-            <IconButton
-              aria-label={t('header.files')}
-              onClick={() => layoutStore.addFilesTab('right')}
-              className="transition-colors text-text-400 hover:text-text-100 hover:bg-bg-200/50"
-              title={t('header.files')}
-            >
-              <FolderIcon size={18} />
             </IconButton>
 
             {onTogglePaneFullscreen && (

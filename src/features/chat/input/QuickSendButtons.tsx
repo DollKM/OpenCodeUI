@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { SendIcon } from '../../../components/Icons'
 import type { Attachment } from '../../attachment'
 
-const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm', 'whatDoYouThink'] as const
+const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm', 'whatDoYouThink', 'whatNext'] as const
+
+const SEND_MESSAGE: Partial<Record<(typeof QUICK_SEND_BUTTONS)[number], string>> = {
+  recommend: '按你推荐的来',
+  whatDoYouThink: '你觉得呢？',
+  whatNext: '你觉得接下来该做什么？',
+}
 
 const SKILL_BUTTONS = [
   { key: 'grillMe', command: '/grill-me ' },
@@ -37,7 +43,7 @@ export const QuickSendButtons = memo(function QuickSendButtons({
       if (now - last < 500) return
       lastClickRef.current[key] = now
 
-      const text = t(`quickSendButtons.${key}`)
+      const text = SEND_MESSAGE[key] ?? t(`quickSendButtons.${key}`)
       void onSend(text, [], { agent: selectedAgent, variant: selectedVariant })
     },
     [onSend, selectedAgent, selectedVariant, t],
