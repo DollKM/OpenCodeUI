@@ -123,7 +123,8 @@
     "continue": "继续",
     "confirm": "确认",
     "whatDoYouThink": "你觉得呢",
-    "whatNext": "接下来？"
+    "whatNext": "接下来？",
+    "gitCommit": "Git"
   },
   "inputActions": {
     "scrollToBottom": "滚动到底部",

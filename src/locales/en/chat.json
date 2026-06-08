@@ -123,7 +123,8 @@
     "continue": "Continue",
     "confirm": "Confirm",
     "whatDoYouThink": "What do you think?",
-    "whatNext": "What next?"
+    "whatNext": "What next?",
+    "gitCommit": "Git"
   },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",

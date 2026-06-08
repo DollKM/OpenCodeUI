@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { SendIcon } from '../../../components/Icons'
 import type { Attachment } from '../../attachment'
 
-const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm', 'whatDoYouThink', 'whatNext'] as const
+const QUICK_SEND_BUTTONS = ['recommend', 'continue', 'confirm', 'whatDoYouThink', 'whatNext', 'gitCommit'] as const
 
 const SEND_MESSAGE: Partial<Record<(typeof QUICK_SEND_BUTTONS)[number], string>> = {
   recommend: '按你推荐的来',
   whatDoYouThink: '你觉得呢？',
   whatNext: '你觉得接下来该做什么？',
+  gitCommit: '根据修改内容，分批次提交git',
 }
 
 const SKILL_BUTTONS = [
