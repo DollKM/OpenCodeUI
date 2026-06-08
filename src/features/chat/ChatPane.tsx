@@ -13,6 +13,10 @@ import { ChatArea, Header, InputBox, PermissionDialog, QuestionDialog, type Chat
 import { type ModelSelectorHandle } from './ModelSelector'
 import { OutlineIndex } from '../../components/OutlineIndex'
 import { PaneHeader } from './PaneHeader'
+import { WaypointsIcon } from '../../components/Icons'
+import { InteractivePtySession } from '../../utils/runViaPty'
+import { useDirectory } from '../../contexts/useDirectory'
+import { uiErrorHandler } from '../../utils'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useCancelHint } from '../../hooks/useCancelHint'
@@ -160,9 +164,6 @@ export const ChatPane = memo(function ChatPane({
     restoreFromMessage,
   } = useModelSelection({ models: visibleModels, sessionId })
 
-  // ============================================
-  // Full Auto Hint
-  // ============================================
   const [fullAutoHint, setFullAutoHint] = useState<string | null>(null)
   const fullAutoHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -278,9 +279,6 @@ export const ChatPane = memo(function ChatPane({
     handleNextSession,
     handleCopyLastResponse,
     restoreAgentFromMessage,
-    pendingImageConfirm,
-    handleConfirmImageResult,
-    handleCancelImageRecognition,
   } = useChatSession({
     paneId,
     chatAreaRef,
@@ -290,6 +288,36 @@ export const ChatPane = memo(function ChatPane({
     navigateToSession,
     navigateHome,
   })
+
+  // CodeGraph index
+  const { currentDirectory: codegraphDir } = useDirectory()
+  const [codegraphLoading, setCodegraphLoading] = useState(false)
+  const handleCodegraphIndex = useCallback(async () => {
+    const dir = effectiveDirectory || codegraphDir
+    if (!dir || codegraphLoading) return
+    setCodegraphLoading(true)
+    const session = new InteractivePtySession(dir, { timeout: 300000 })
+    try {
+      await session.connect()
+      const isWin = navigator.platform?.toLowerCase().includes('win')
+      const checkCmd = isWin ? 'Test-Path .codegraph' : 'test -d ".codegraph" && echo exists'
+      const { output: checkOut } = await session.exec(checkCmd)
+      const codegraphExists = checkOut.includes('True') || checkOut.includes('exists')
+      if (!codegraphExists) {
+        await session.exec('codegraph init')
+      }
+      await session.exec('codegraph index')
+    } catch (err) {
+      console.log('[codegraph] error:', err)
+      uiErrorHandler('codegraph index', err)
+    } finally {
+      console.log('[codegraph] finally - clearing loading')
+      setCodegraphLoading(false)
+      session.close()
+    }
+    // 安全兜底：防止 loading 卡死
+    setTimeout(() => setCodegraphLoading(false), 1000)
+  }, [effectiveDirectory, codegraphDir, codegraphLoading])
 
   const messageView = useMemo(() => ({ sessionId: routeSessionId, messages }), [routeSessionId, messages])
   const deferredMessageView = useDeferredValue(messageView)
@@ -724,7 +752,25 @@ export const ChatPane = memo(function ChatPane({
         </div>
       )}
 
+      {showCompactShell && (
+        <PaneHeader
+          paneId={paneId}
+          sessionId={routeSessionId}
+          isFocused={isFocused}
+          paneCount={paneCount}
+          showSidebarButton={showSidebarButton}
+          onOpenSidebar={onOpenSidebar}
+          canSplitPane={splitPaneEnabled}
+          isPaneFullscreen={isPaneFullscreen}
+          onTogglePaneFullscreen={onTogglePaneFullscreen}
+          onFocus={handlePaneFocus}
+        />
+      )}
+
       <style>{`
+        @keyframes cg-spin {
+          to { transform: rotate(360deg); }
+        }
         @keyframes gradient-flow-slide {
           0% { transform: translateX(-100%); }
           3% { transform: translateX(-100%); }
@@ -733,7 +779,7 @@ export const ChatPane = memo(function ChatPane({
         }
       `}</style>
       {busyCount > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-30 overflow-hidden pointer-events-none" style={{ top: 56, height: 4 }}>
+        <div className="absolute top-0 left-0 right-0 z-30 overflow-hidden pointer-events-none" style={{ top: showCompactShell ? 40 : 56, height: 4 }}>
           <div
             className="h-full"
             style={{
@@ -744,6 +790,34 @@ export const ChatPane = memo(function ChatPane({
           />
         </div>
       )}
+
+      {/* 圆形悬浮按钮 - codegraph index */}
+      <div
+        className="absolute z-20"
+        style={{
+          top: showCompactShell ? 48 : 64,
+          right: 12,
+        }}
+      >
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); handleCodegraphIndex() }}
+          disabled={codegraphLoading}
+          className="relative w-10 h-10 flex items-center justify-center rounded-full transition-colors bg-bg-100/80 hover:bg-bg-200/80 border border-border-200/50 shadow-sm text-text-400 hover:text-text-100 disabled:opacity-100"
+          title="Build CodeGraph index"
+          aria-label="Build CodeGraph index"
+        >
+          {codegraphLoading && (
+            <span className="absolute inset-0 rounded-full" style={{
+              background: 'conic-gradient(from 0deg, transparent, hsl(var(--accent-main-100)), transparent, hsl(var(--accent-main-100)), transparent)',
+              WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 1px))',
+              mask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 1px))',
+              animation: 'cg-spin 1.5s linear infinite',
+            }} />
+          )}
+          <WaypointsIcon size={18} className={codegraphLoading ? 'opacity-50' : ''} />
+        </button>
+      </div>
 
       <div className="absolute inset-0">
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
@@ -851,9 +925,6 @@ export const ChatPane = memo(function ChatPane({
                 }
               : undefined
           }
-          pendingImageConfirm={pendingImageConfirm}
-          onConfirmImageResult={handleConfirmImageResult}
-          onCancelImageRecognition={handleCancelImageRecognition}
           collapsedQuestion={
             !inlineToolRequests &&
             pendingPermissionRequests.length === 0 &&
@@ -919,20 +990,6 @@ export const ChatPane = memo(function ChatPane({
         onDragLeave={handlePaneDragLeave}
         onDrop={handlePaneDrop}
       >
-        {showCompactShell && (
-          <PaneHeader
-            paneId={paneId}
-            sessionId={routeSessionId}
-            isFocused={isFocused}
-            paneCount={paneCount}
-            showSidebarButton={showSidebarButton}
-            onOpenSidebar={onOpenSidebar}
-            canSplitPane={splitPaneEnabled}
-            isPaneFullscreen={isPaneFullscreen}
-            onTogglePaneFullscreen={onTogglePaneFullscreen}
-            onFocus={handlePaneFocus}
-          />
-        )}
         {chatContent}
         <PaneDropOverlay ref={overlayRef} />
       </div>

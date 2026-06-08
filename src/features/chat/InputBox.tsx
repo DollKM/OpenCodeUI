@@ -84,13 +84,6 @@ export interface InputBoxProps {
   // Collapsed dialog capsules
   collapsedPermission?: CollapsedDialogInfo
   collapsedQuestion?: CollapsedDialogInfo
-  // Image recognition sub-session
-  pendingImageConfirm?: {
-    childSessionId: string
-    parentSessionId: string
-  } | null
-  onConfirmImageResult?: () => void
-  onCancelImageRecognition?: () => void
 }
 
 // ============================================
@@ -133,9 +126,6 @@ function InputBoxComponent({
   onScrollToBottom,
   collapsedPermission,
   collapsedQuestion,
-  pendingImageConfirm,
-  onConfirmImageResult,
-  onCancelImageRecognition,
 }: InputBoxProps) {
   const { t } = useTranslation('chat')
   // 合并文件能力：优先用 fileCapabilities，回退到 supportsImages
@@ -1137,33 +1127,6 @@ function InputBoxComponent({
                           rows={1}
                         />
                       </div>
-
-                      {/* Image Recognition Confirm Bar */}
-                      {pendingImageConfirm && sessionId === pendingImageConfirm.childSessionId && (
-                        <div className="flex items-center gap-2 px-4 py-2 border-t border-border-200/50">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[length:var(--fs-sm)] text-text-300 truncate">
-                              {t('inputBox.imageRecognitionSubtitle')}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={onConfirmImageResult}
-                            disabled={isSubmitting}
-                            className="px-3 py-1.5 text-[length:var(--fs-sm)] font-medium rounded-lg bg-accent-main-100 text-white hover:bg-accent-main-100/90 transition-colors disabled:opacity-50"
-                          >
-                            {t('inputBox.confirmImageResult')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={onCancelImageRecognition}
-                            disabled={isSubmitting}
-                            className="px-3 py-1.5 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors"
-                          >
-                            {t('common:cancel')}
-                          </button>
-                        </div>
-                      )}
 
                       {/* Bottom Bar -> InputToolbar */}
                       <InputToolbar
