@@ -14,6 +14,12 @@ import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
+const SESSIONS_CACHE_PREFIX = 'opencode:sessions-cache:'
+
+function getSessionsCacheKey(directory: string | undefined): string {
+  return SESSIONS_CACHE_PREFIX + (directory ? normalizeToForwardSlash(directory) : 'global')
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { currentDirectory } = useDirectory()
 
@@ -27,12 +33,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const searchTimerRef = useRef<number | null>(null)
   const currentDirectoryRef = useRef(currentDirectory)
   const searchRef = useRef(search)
-  const isLoadingMoreRef = useRef(false) // 防止并发 loadMore
-  const isFetchingRef = useRef(false) // 防止 onReconnected 密集触发时重复请求
+  const isLoadingMoreRef = useRef(false)
+  const isFetchingRef = useRef(false)
   const fetchSessionsRef = useRef<() => Promise<void>>(() => Promise.resolve())
-  const currentLimitRef = useRef(30) // 当前 limit，loadMore 时递增
+  const currentLimitRef = useRef(30)
 
-  // 保持 ref 同步
   useEffect(() => {
     currentDirectoryRef.current = currentDirectory
   }, [currentDirectory])
@@ -41,25 +46,36 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     searchRef.current = search
   }, [search])
 
-  // 核心获取逻辑
-  // 注意：directory 传给 getSessions 时使用正斜杠格式
-  // http 层的 fetchWithBothSlashesAndMerge 会处理两种斜杠格式的兼容
   const fetchSessions = useCallback(
     async (params: SessionListParams & { append?: boolean } = {}) => {
       const { append = false, ...queryParams } = params
       const requestId = ++requestIdRef.current
       isFetchingRef.current = true
 
+      const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
+      const isSearchMode = !!search
+      let showLoading = true
+
+      if (!append && !isSearchMode && !isLoadingMoreRef.current) {
+        try {
+          const cached = localStorage.getItem(getSessionsCacheKey(targetDir))
+          if (cached) {
+            const parsed = JSON.parse(cached)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setSessions(parsed.filter(s => !s.parentID))
+              showLoading = false
+            }
+          }
+        } catch {}
+      }
+
       if (append) {
         setIsLoadingMore(true)
-      } else {
+      } else if (showLoading) {
         setIsLoading(true)
       }
 
       try {
-        // 使用正斜杠格式传给 API（http 层会处理兼容）
-        const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
-
         const data = await getSessions({
           limit: currentLimitRef.current,
           directory: targetDir,
@@ -69,20 +85,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
         if (requestId !== requestIdRef.current) return
 
-        // 自动检测路径风格（从后端返回的 directory 字段）
         if (data.length > 0 && data[0].directory) {
           autoDetectPathStyle(data[0].directory)
         }
 
         if (append) {
-          // 去重：过滤掉已存在的 session
           setSessions(prev => {
             const existingIds = new Set(prev.map(s => s.id))
-            const newSessions = data.filter(s => !existingIds.has(s.id))
+            const newSessions = data.filter(s => !existingIds.has(s.id) && !s.parentID)
             return [...prev, ...newSessions]
           })
         } else {
-          setSessions(data)
+          setSessions(data.filter(s => !s.parentID))
+          if (!isSearchMode && targetDir) {
+            try { localStorage.setItem(getSessionsCacheKey(targetDir), JSON.stringify(data)) } catch {}
+          }
         }
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
@@ -109,8 +126,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
 
-    // 切换目录或搜索时重置 limit
     currentLimitRef.current = 30
+
+    // 在 timer 之前同步读取缓存，避免 loading 闪烁
+    if (!search) {
+      const dir = normalizeToForwardSlash(currentDirectory) || undefined
+      try {
+        const cached = localStorage.getItem(getSessionsCacheKey(dir))
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSessions(parsed)
+            setIsLoading(false)
+          }
+        }
+      } catch {}
+    }
 
     searchTimerRef.current = window.setTimeout(
       () => {
@@ -124,13 +155,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchSessions, search, currentDirectory])
 
+  function writeSessionCache(directory: string | undefined, sessions: ApiSession[]) {
+    if (!directory) return
+    try { localStorage.setItem(getSessionsCacheKey(directory), JSON.stringify(sessions)) } catch {}
+  }
+
   // 订阅 SSE 事件，实时更新 session 列表
   useEffect(() => {
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
         if (!matchesCurrentDirectory(session)) return
+        if (session.parentID) return
 
-        // 搜索态下交给服务端重新给出结果，避免本地过滤和服务端逻辑不一致
         if (searchRef.current) {
           fetchSessionsRef.current()
           return
@@ -138,32 +174,49 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
         setSessions(prev => {
           if (prev.some(s => s.id === session.id)) return prev
-          return [session, ...prev]
+          const updated = [session, ...prev]
+          writeSessionCache(currentDirectoryRef.current, updated)
+          return updated
         })
       },
       onSessionUpdated: session => {
+        if (session.parentID) {
+          setSessions(prev => {
+            const filtered = prev.filter(s => s.id !== session.id)
+            if (filtered.length !== prev.length) {
+              writeSessionCache(currentDirectoryRef.current, filtered)
+            }
+            return filtered
+          })
+          return
+        }
+
         if (searchRef.current) {
           if (matchesCurrentDirectory(session)) {
             fetchSessionsRef.current()
           } else {
-            setSessions(prev => prev.filter(s => s.id !== session.id))
+            setSessions(prev => {
+              const filtered = prev.filter(s => s.id !== session.id)
+              writeSessionCache(currentDirectoryRef.current, filtered)
+              return filtered
+            })
           }
           return
         }
 
         setSessions(prev => {
-          const index = prev.findIndex(s => s.id === session.id)
-
           if (!matchesCurrentDirectory(session)) {
-            return index === -1 ? prev : prev.filter(s => s.id !== session.id)
+            const filtered = prev.filter(s => s.id !== session.id)
+            if (filtered.length !== prev.length) {
+              writeSessionCache(currentDirectoryRef.current, filtered)
+            }
+            return filtered
           }
 
-          if (index === -1) {
-            return [session, ...prev]
-          }
-
-          const updated = prev.filter(s => s.id !== session.id)
-          return [session, ...updated]
+          const filtered = prev.filter(s => s.id !== session.id)
+          const updated = [session, ...filtered]
+          writeSessionCache(currentDirectoryRef.current, updated)
+          return updated
         })
       },
       onTodoUpdated: data => {
@@ -219,11 +272,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
       await apiDeleteSession(id, targetDir)
-      // 清理该 session 的子 session 记录，防止内存泄漏
       childSessionStore.clearChildren(id)
-      // 清理该 session 的排队消息
       followupQueueStore.clearSession(id)
-      setSessions(prev => prev.filter(s => s.id !== id))
+      setSessions(prev => {
+        const updated = prev.filter(s => s.id !== id)
+        writeSessionCache(currentDirectoryRef.current, updated)
+        return updated
+      })
     },
     [currentDirectory],
   )

@@ -113,7 +113,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           autoDetectPathStyle(data[0].directory)
         }
 
-        setSessions(data)
+        const filtered = rootsOnly ? data.filter(s => !s.parentID) : data
+        setSessions(filtered)
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
         if (requestId !== requestIdRef.current) return
@@ -167,6 +168,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
         if (!matchesDirectory(session)) return
+        if (rootsOnly && session.parentID) return
 
         if (searchRef.current) {
           void fetchSessionsRef.current({ search: searchRef.current || undefined })
@@ -179,6 +181,11 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         })
       },
       onSessionUpdated: session => {
+        if (rootsOnly && session.parentID) {
+          setSessions(prev => prev.filter(item => item.id !== session.id))
+          return
+        }
+
         if (searchRef.current) {
           if (matchesDirectory(session)) {
             void fetchSessionsRef.current({ search: searchRef.current || undefined })
