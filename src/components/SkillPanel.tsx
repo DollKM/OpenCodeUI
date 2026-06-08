@@ -209,16 +209,6 @@ const SkillItem = memo(function SkillItem({ skill, usage, onDelete }: { skill: S
           <div className="text-[length:var(--fs-base)] text-text-100 font-medium">{skill.name}</div>
           <div className="text-[length:var(--fs-sm)] text-text-400 truncate">{skill.description ?? ''}</div>
         </div>
-        <button
-          type="button"
-          onClick={handleUninstall}
-          disabled={deleting}
-          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-text-400 opacity-0 group-hover:opacity-100 hover:bg-danger-100/10 hover:text-danger-100 transition-all disabled:opacity-50"
-          title={t('skillPanel.uninstall')}
-        >
-          <TrashIcon size={12} />
-          {deleting && <span className="text-[length:var(--fs-xs)]">{t('skillPanel.uninstalling')}</span>}
-        </button>
         <span className="shrink-0 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-accent-main-100/10 text-accent-main-100 text-[length:var(--fs-xs)] font-medium">
           {usage}
         </span>
@@ -226,13 +216,13 @@ const SkillItem = memo(function SkillItem({ skill, usage, onDelete }: { skill: S
 
       {expanded && (
         <div className="mx-2 mb-2 ml-7 rounded-md border border-border-200/40 bg-bg-100/50 px-3 py-2">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[length:var(--fs-sm)] text-text-500 font-mono break-all">{skill.location}</div>
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <div className="flex-1 min-w-0 text-[length:var(--fs-sm)] text-text-500 font-mono break-all">{skill.location}</div>
             <button
               type="button"
               onClick={handleUninstall}
               disabled={deleting}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[length:var(--fs-xs)] rounded-md bg-danger-100/10 text-danger-100 hover:bg-danger-100 hover:text-bg-000 transition-colors disabled:opacity-50"
+              className="shrink-0 inline-flex items-center justify-center gap-1 w-[60px] py-1 text-[length:var(--fs-xs)] rounded-md bg-danger-100/10 text-danger-100 hover:bg-danger-100 hover:text-bg-000 transition-colors disabled:opacity-50"
             >
               <TrashIcon size={11} />
               {deleting ? t('skillPanel.uninstalling') : t('skillPanel.uninstall')}
