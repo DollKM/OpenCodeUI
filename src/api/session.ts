@@ -6,9 +6,16 @@
 import { getSDKClient, unwrap } from './sdk'
 import { normalizeTodoItems } from './todo'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { ApiSession, SessionListParams } from './types'
+import { getSessionMessages } from './message'
+import { normalizeFileDiffs } from '../types/api/file'
+import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
+
+function normalizeSessionList(value: unknown): ApiSession[] {
+  if (Array.isArray(value)) return value as ApiSession[]
+  throw new Error('Invalid OpenCode session list response')
+}
 
 // ============================================
 // Session Status
@@ -17,6 +24,45 @@ import type { TodoItem } from '../types/api/event'
 export async function getSessionStatus(directory?: string): Promise<SessionStatusMap> {
   const sdk = getSDKClient()
   return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) }))
+}
+
+/**
+ * 获取 session 的 diff
+ * 返回可在 UI 中渲染的 SnapshotFileDiff（过滤缺少 file 的异常项）
+ */
+export async function getSessionDiff(sessionId: string, directory?: string, messageId?: string): Promise<FileDiff[]> {
+  const sdk = getSDKClient()
+  return normalizeFileDiffs(
+    unwrap(
+      await sdk.session.diff({
+        sessionID: sessionId,
+        directory: formatPathForApi(directory),
+        messageID: messageId,
+      }),
+    ),
+  )
+}
+
+function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithParts & { info: ApiUserMessage } {
+  return message.info.role === 'user'
+}
+
+/**
+ * 获取当前可见用户消息对应的本轮 diff
+ */
+export async function getLastTurnDiff(sessionId: string, directory?: string): Promise<FileDiff[]> {
+  const [session, messages] = await Promise.all([
+    getSession(sessionId, directory),
+    getSessionMessages(sessionId, undefined, directory),
+  ])
+
+  const userMessages = messages.filter(isUserMessage)
+  const revertMessageId = session.revert?.messageID
+  const visibleUserMessages = revertMessageId
+    ? userMessages.filter(message => message.info.id < revertMessageId)
+    : userMessages
+
+  return normalizeFileDiffs(visibleUserMessages.at(-1)?.info.summary?.diffs)
 }
 
 // ============================================
@@ -29,14 +75,16 @@ export async function getSessionStatus(directory?: string): Promise<SessionStatu
 export async function getSessions(params: SessionListParams = {}): Promise<ApiSession[]> {
   const sdk = getSDKClient()
   const { directory, roots, start, search, limit } = params
-  return unwrap(
-    await sdk.session.list({
-      directory: formatPathForApi(directory),
-      roots,
-      start,
-      search,
-      limit,
-    }),
+  return normalizeSessionList(
+    unwrap(
+      await sdk.session.list({
+        directory: formatPathForApi(directory),
+        roots,
+        start,
+        search,
+        limit,
+      }),
+    ),
   )
 }
 

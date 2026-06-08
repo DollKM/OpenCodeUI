@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getCurrentProject, getProjects, type ApiProject } from '../api'
+import { serverStore } from '../store/serverStore'
 import { apiErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
 
@@ -22,13 +23,17 @@ export function useProject(): UseProjectResult {
   const [projects, setProjects] = useState<ApiProject[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestIdRef = useRef(0)
 
   const loadProjects = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     setIsLoading(true)
     setError(null)
 
     try {
       const [current, all] = await Promise.all([getCurrentProject(), getProjects()])
+
+      if (requestId !== requestIdRef.current) return
 
       setProjects(all)
       localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify(all))
@@ -47,10 +52,11 @@ export function useProject(): UseProjectResult {
         setCurrentProject(current)
       }
     } catch (e) {
+      if (requestId !== requestIdRef.current) return
       apiErrorHandler('load projects', e)
       setError(e instanceof Error ? e.message : t('sessions.failedToLoadProjects'))
     } finally {
-      setIsLoading(false)
+      if (requestId === requestIdRef.current) setIsLoading(false)
     }
   }, [t])
 
@@ -68,6 +74,11 @@ export function useProject(): UseProjectResult {
     loadProjects()
   }, [loadProjects])
 
+  useEffect(() => {
+    return serverStore.onServerChange(() => void loadProjects())
+  }, [loadProjects])
+
+  // 选择项目
   const selectProject = useCallback(
     (projectId: string) => {
       const project = projects.find(p => p.id === projectId)

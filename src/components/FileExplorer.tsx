@@ -4,7 +4,7 @@
 // 性能优化：使用 CSS 变量 + requestAnimationFrame 处理 resize
 // ============================================
 
-import { memo, useCallback, useMemo, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
@@ -28,6 +28,7 @@ import {
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
 import type { FileContent } from '../api/types'
+import { startInternalDrag } from '../lib/internalDragCore'
 
 // 常量
 const MIN_TREE_HEIGHT = 100
@@ -309,17 +310,16 @@ const FileTreeItem = memo(function FileTreeItem({
     }
   }, [status])
 
-  // 拖拽到输入框实现 @mention
-  const handleDragStart = useCallback(
-    (e: DragEvent<HTMLButtonElement>) => {
+  // 拖拽到输入框实现 @mention。使用 pointer 拖拽，避免 Tauri 原生文件 drop 接管 HTML5 DnD。
+  const handlePointerDragStart = useCallback(
+    (e: PointerEvent<HTMLButtonElement>) => {
       const fileData = {
         type: (isDirectory ? 'folder' : 'file') as 'file' | 'folder',
         path: node.path, // 相对路径
         absolute: node.absolute, // 绝对路径
         name: node.name,
       }
-      e.dataTransfer.setData('application/opencode-file', JSON.stringify(fileData))
-      e.dataTransfer.effectAllowed = 'copy'
+      startInternalDrag(e, { kind: 'file-mention', file: fileData })
     },
     [node.path, node.absolute, node.name, isDirectory],
   )
@@ -327,12 +327,11 @@ const FileTreeItem = memo(function FileTreeItem({
   return (
     <div>
       <button
-        draggable
-        onDragStart={handleDragStart}
+        onPointerDown={handlePointerDragStart}
         onClick={() => onClick(node)}
         className={`
           w-full flex items-center gap-1 px-2 py-0.5 text-left cursor-default
-          hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
+          select-none hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
           text-text-300
           ${node.ignored ? 'opacity-50' : ''}
         `}
@@ -353,6 +352,7 @@ const FileTreeItem = memo(function FileTreeItem({
           alt=""
           width={16}
           height={16}
+          draggable={false}
           className="shrink-0"
           loading="lazy"
           decoding="async"

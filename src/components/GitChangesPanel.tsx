@@ -28,6 +28,16 @@ import { useSessionNavigation } from '../contexts/SessionNavigationContext'
 const MIN_LIST_HEIGHT = 80
 const MIN_PREVIEW_HEIGHT = 120
 
+type ChangeMode = ChangeScopeMode
+
+function getDefaultChangeMode(options: ChangeMode[]) {
+  if (options.includes('turn')) return 'turn'
+  if (options.includes('git')) return 'git'
+  if (options.includes('branch')) return 'branch'
+  if (options.includes('session')) return 'session'
+  return options[0] ?? 'session'
+}
+
 function reconcileDiffPreviewState(diffs: FileDiff[], openFiles: string[], activeFile: string | null) {
   const availableFiles = new Set(diffs.map(diff => diff.file))
   const nextOpenFiles = openFiles.filter(file => availableFiles.has(file))
@@ -98,6 +108,89 @@ export const GitChangesPanel = memo(function GitChangesPanel({
   const selectedFileRef = useRef<string | null>(null)
 
   const isAnyResizing = isPanelResizing || isResizing
+  const setChangeMode = useCallback(
+    (mode: ChangeMode) => {
+      changeScopeStore.setMode(sessionId, mode)
+    },
+    [sessionId],
+  )
+  const changeOptions = useMemo<ChangeMode[]>(() => {
+    const options: ChangeMode[] = []
+    if (project?.vcs) options.push('turn', 'git')
+    if (project?.vcs && vcsInfo?.branch && vcsInfo?.default_branch && vcsInfo.branch !== vcsInfo.default_branch) {
+      options.push('branch')
+    }
+    if (project?.vcs) options.push('session')
+    return options
+  }, [project?.vcs, vcsInfo?.branch, vcsInfo?.default_branch])
+  const preferredChangeMode = useMemo(() => getDefaultChangeMode(changeOptions), [changeOptions])
+  const changeModeMeta = useMemo(
+    () => ({
+      git: {
+        label: t('sessionChanges.gitScope'),
+        description: t('sessionChanges.gitScopeHint'),
+        icon: <GitDiffIcon size={12} />,
+      },
+      branch: {
+        label: t('sessionChanges.branchScope'),
+        description: t('sessionChanges.branchScopeHint', { branch: vcsInfo?.default_branch ?? 'main' }),
+        icon: <GitBranchIcon size={12} />,
+      },
+      session: {
+        label: t('sessionChanges.sessionScope'),
+        description: t('sessionChanges.sessionScopeHint'),
+        icon: <LayersIcon size={12} />,
+      },
+      turn: {
+        label: t('sessionChanges.turnScope'),
+        description: t('sessionChanges.turnScopeHint'),
+        icon: <ClockIcon size={12} />,
+      },
+    }),
+    [t, vcsInfo?.default_branch],
+  )
+  const diffs = useMemo(
+    () =>
+      changeMode === 'git'
+        ? gitDiffs
+        : changeMode === 'branch'
+          ? branchDiffs
+          : changeMode === 'session'
+            ? sessionDiffs
+            : turnDiffs,
+    [branchDiffs, changeMode, gitDiffs, sessionDiffs, turnDiffs],
+  )
+  const loading = projectLoading || initializingGit || loadingModes[changeMode]
+
+  const focusChangeMenuOption = useCallback((mode: ChangeMode) => {
+    changeMenuOptionRefs.current[mode]?.focus()
+  }, [])
+
+  const isVisibleFocusableElement = useCallback((target: EventTarget | null) => {
+    const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
+    const candidate = element?.closest<HTMLElement>(
+      'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )
+    if (!candidate) return false
+
+    const style = window.getComputedStyle(candidate)
+    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
+  }, [])
+
+  const focusRelativeToChangeTrigger = useCallback((direction: 1 | -1) => {
+    const trigger = changeMenuTriggerRef.current
+    if (!trigger) return
+
+    const focusables = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([type="file"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(element => !element.closest('[aria-hidden="true"]'))
+
+    const currentIndex = focusables.findIndex(item => item === trigger)
+    if (currentIndex === -1) return
+    focusables[currentIndex + direction]?.focus()
+  }, [])
 
   useEffect(() => {
     openDiffFilesRef.current = openDiffFiles

@@ -9,7 +9,6 @@ import { isTauri } from '../utils/tauri'
 import type {
   ApiMessage,
   EventCallbacks,
-  EventType,
   GlobalEvent,
   ServerConnectedPayload,
   SessionErrorPayload,
@@ -72,8 +71,6 @@ const BACKGROUND_KEEPALIVE_INTERVAL = 30000
 
 // 所有订阅者的 callbacks
 const allSubscribers = new Set<EventCallbacks>()
-
-const EVENT_TYPE_SET = new Set<string>(Object.values(EventTypes))
 
 // 单例连接状态
 let singletonController: AbortController | null = null
@@ -463,12 +460,8 @@ function isGlobalEvent(value: unknown): value is GlobalEvent {
   if (!isRecord(value)) return false
   if (typeof value.directory !== 'string') return false
   if (!isRecord(value.payload)) return false
-  if (!isEventType(value.payload.type)) return false
+  if (typeof value.payload.type !== 'string') return false
   return 'properties' in value.payload
-}
-
-function isEventType(value: unknown): value is EventType {
-  return typeof value === 'string' && EVENT_TYPE_SET.has(value)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -855,6 +848,11 @@ export function reconnectSSE() {
 
   // 立即重连（getApiBaseUrl() 会读取新的 activeServer）
   connectSingleton()
+}
+
+export function disconnectSSE(error?: string) {
+  disconnectSingleton()
+  updateConnectionState({ state: error ? 'error' : 'disconnected', error, reconnectAttempt: 0 })
 }
 
 /**

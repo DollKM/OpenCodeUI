@@ -18,6 +18,7 @@ import { InteractivePtySession } from '../../utils/runViaPty'
 import { useDirectory } from '../../contexts/useDirectory'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
+import { useServerStore } from '../../hooks/useServerStore'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { InlineToolRequestContext, type InlineToolRequestContextValue } from './InlineToolRequestContext'
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
@@ -31,6 +32,9 @@ import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
 import { useTheme } from '../../hooks/useTheme'
 import type { Attachment } from '../../api'
+import type { MessageError } from '../../types/message'
+import { getInternalDragSnapshot, subscribeInternalDrag, subscribeInternalDrop } from '../../lib/internalDragCore'
+import { ErrorBoundary } from '../../components/ErrorBoundary'
 
 interface ChatPaneProps {
   paneId: string
@@ -40,6 +44,7 @@ interface ChatPaneProps {
   displayMode: 'single' | 'split'
   isPaneFullscreen?: boolean
   onOpenSidebar?: () => void
+  onOpenSettings?: () => void
   showSidebarButton?: boolean
   onSplitPane?: () => void
   onTogglePaneFullscreen?: () => void
@@ -124,6 +129,7 @@ export const ChatPane = memo(function ChatPane({
   displayMode,
   isPaneFullscreen = false,
   onOpenSidebar,
+  onOpenSettings,
   showSidebarButton = false,
   onTogglePaneFullscreen,
   navigatePaneToSession,
@@ -149,6 +155,8 @@ export const ChatPane = memo(function ChatPane({
   // Models
   // ============================================
   const { models, isLoading: modelsLoading, refetch: refetchModels } = useModels()
+  const { activeServer, getHealth } = useServerStore()
+  const activeServerHealth = activeServer ? getHealth(activeServer.id) : null
   const hiddenModelKeys = useHiddenModelKeys()
   const visibleModels = useMemo(
     () => models.filter(model => !hiddenModelKeys.includes(getModelKey(model))),
@@ -247,6 +255,7 @@ export const ChatPane = memo(function ChatPane({
     setSelectedAgent,
     routeSessionId,
     loadState,
+    loadError,
     hasMoreHistory,
     retryStatus,
     effectiveDirectory,
@@ -325,7 +334,48 @@ export const ChatPane = memo(function ChatPane({
   const renderedMessages = renderedMessagesView.sessionId === routeSessionId ? renderedMessagesView.messages : []
   const isRenderingDeferredMessages = renderedMessages !== messages
   const renderedLoadState = loadState === 'loaded' && isRenderingDeferredMessages ? 'loading' : loadState
+  const inputDisabled = !!routeSessionId && loadState === 'error' && messages.length === 0
   const chatPageViewModel = useChatPageViewModel(renderedMessages)
+
+  const connectionError = useMemo<MessageError | undefined>(() => {
+    if (!activeServer) {
+      return {
+        name: 'APIError',
+        data: {
+          message: 'No active OpenCode server is selected',
+          isRetryable: false,
+        },
+      }
+    }
+
+    if (!activeServerHealth || activeServerHealth.status === 'checking' || activeServerHealth.status === 'online') {
+      return undefined
+    }
+
+    const lines = [
+      `Server: ${activeServer.name}`,
+      `URL: ${activeServer.url}`,
+      `Status: ${activeServerHealth.status}`,
+      activeServerHealth.error ? `Error: ${activeServerHealth.error}` : '',
+      activeServerHealth.status === 'error' || activeServerHealth.status === 'offline'
+        ? 'Expected /global/health to return OpenCode health JSON.'
+        : '',
+    ].filter(Boolean)
+
+    const responseBody = [lines.join('\n'), activeServerHealth.details ? `Raw diagnostics:\n${activeServerHealth.details}` : '']
+      .filter(Boolean)
+      .join('\n\n')
+
+    return {
+      name: 'APIError',
+      data: {
+        message: activeServerHealth.error || `Unable to connect to ${activeServer.name}`,
+        statusCode: activeServerHealth.status === 'unauthorized' ? 401 : undefined,
+        isRetryable: activeServerHealth.status !== 'unauthorized',
+        responseBody,
+      },
+    }
+  }, [activeServer, activeServerHealth])
 
   const navigationCtx = useMemo(
     () => ({ navigateToSession, currentSessionId: routeSessionId, currentDirectory: effectiveDirectory }),
@@ -484,6 +534,7 @@ export const ChatPane = memo(function ChatPane({
   // drop() prefers the pending value so it never loses a last-frame move.
   // ============================================
   const overlayRef = useRef<PaneDropOverlayHandle>(null)
+  const paneRootRef = useRef<HTMLDivElement>(null)
   const currentZoneRef = useRef<DropZone | null>(null)
   const pendingZoneRef = useRef<DropZone | null>(null)
   const dropRafRef = useRef<number | null>(null)
@@ -507,37 +558,25 @@ export const ChatPane = memo(function ChatPane({
     writeZone(null)
   }, [cancelPendingZone, writeZone])
 
-  // Drag end can fire on the source (SessionListItem) — we listen globally so
-  // the overlay always clears even if the user aborts with ESC inside the pane.
   useEffect(() => {
-    const handleGlobalDragEnd = () => resetDropState()
-    window.addEventListener('dragend', handleGlobalDragEnd)
     return () => {
-      window.removeEventListener('dragend', handleGlobalDragEnd)
       if (dropRafRef.current !== null) cancelAnimationFrame(dropRafRef.current)
     }
-  }, [resetDropState])
-
-  const readSessionDragPayload = useCallback((e: React.DragEvent): { sessionId: string; directory: string } | null => {
-    if (!e.dataTransfer.types.includes('text/x-session-id')) return null
-    const sessionId = e.dataTransfer.getData('text/x-session-id')
-    if (!sessionId) return null
-    const directory = e.dataTransfer.getData('text/x-session-directory') || ''
-    return { sessionId, directory }
   }, [])
 
-  const handlePaneDragOver = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      if (!splitPaneEnabled) return
-      if (!e.dataTransfer.types.includes('text/x-session-id')) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
+  const updateSessionDropZoneAt = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!splitPaneEnabled) return null
+      const element = paneRootRef.current
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return null
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
 
-      const rect = e.currentTarget.getBoundingClientRect()
-      if (rect.width === 0 || rect.height === 0) return
-      const xRel = (e.clientX - rect.left) / rect.width
-      const yRel = (e.clientY - rect.top) / rect.height
-      pendingZoneRef.current = resolveDropZone({ xRel, yRel })
+      const xRel = (clientX - rect.left) / rect.width
+      const yRel = (clientY - rect.top) / rect.height
+      const zone = resolveDropZone({ xRel, yRel })
+      pendingZoneRef.current = zone
 
       if (dropRafRef.current === null) {
         dropRafRef.current = requestAnimationFrame(() => {
@@ -545,41 +584,36 @@ export const ChatPane = memo(function ChatPane({
           writeZone(pendingZoneRef.current)
         })
       }
+
+      return zone
     },
     [splitPaneEnabled, writeZone],
   )
 
-  const handlePaneDragLeave = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      // Ignore bubbles that stay within the pane
-      const related = e.relatedTarget as Node | null
-      if (related && e.currentTarget.contains(related)) return
-      resetDropState()
+  const clearSessionDropZoneAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const element = paneRootRef.current
+      if (!element) return resetDropState()
+      const rect = element.getBoundingClientRect()
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+        resetDropState()
+      }
     },
     [resetDropState],
   )
 
-  const handlePaneDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      // Prefer pending (freshly-written by the last dragover) over current
-      // (what rAF had a chance to commit) so we never miss a last-frame move.
-      const zone = pendingZoneRef.current ?? currentZoneRef.current
+  const handleSessionDrop = useCallback(
+    (payload: { sessionId: string; directory?: string }, zone: DropZone) => {
       resetDropState()
       cancelPendingSplitSessionNavigation()
 
-      const payload = readSessionDragPayload(e)
-      if (!payload || !zone) return
-      e.preventDefault()
-
-      // Same session dropped onto its own pane → nothing to do
       if (payload.sessionId === routeSessionId && zone === 'center') return
 
       if (zone === 'center') {
-        navigatePaneToSession(paneId, payload.sessionId, payload.directory || undefined)
+        navigatePaneToSession(paneId, payload.sessionId, payload.directory)
         return
       }
 
-      // Split: create new pane on the chosen side, then route the new pane to the session
       const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
       const newPaneId = paneLayoutStore.splitPaneToSide(paneId, zone, null)
       if (newPaneId) {
@@ -589,12 +623,44 @@ export const ChatPane = memo(function ChatPane({
 
         scheduleSplitSessionNavigation(() => {
           if (!paneLayoutStore.findLeaf(newPaneId)) return
-          navigatePaneToSession(newPaneId, payload.sessionId, payload.directory || undefined)
+          navigatePaneToSession(newPaneId, payload.sessionId, payload.directory)
         })
       }
     },
-    [paneId, routeSessionId, navigatePaneToSession, readSessionDragPayload, resetDropState],
+    [paneId, routeSessionId, navigatePaneToSession, resetDropState],
   )
+
+  useEffect(() => {
+    return subscribeInternalDrag(() => {
+      const active = getInternalDragSnapshot().active
+      if (!active || active.payload.kind !== 'session') {
+        resetDropState()
+        return
+      }
+
+      const zone = updateSessionDropZoneAt(active.current.x, active.current.y)
+      if (!zone) clearSessionDropZoneAt(active.current.x, active.current.y)
+    })
+  }, [clearSessionDropZoneAt, resetDropState, updateSessionDropZoneAt])
+
+  useEffect(() => {
+    return subscribeInternalDrop(event => {
+      if (event.payload.kind !== 'session') return
+      const zone = updateSessionDropZoneAt(event.point.x, event.point.y)
+      if (!zone) {
+        resetDropState()
+        return
+      }
+
+      handleSessionDrop(
+        {
+          sessionId: event.payload.sessionId,
+          directory: event.payload.directory,
+        },
+        zone,
+      )
+    })
+  }, [handleSessionDrop, resetDropState, updateSessionDropZoneAt])
 
   const handleToggleFullAuto = useCallback(() => {
     autoApproveStore.cyclePaneFullAutoMode(paneId)
@@ -820,29 +886,33 @@ export const ChatPane = memo(function ChatPane({
 
       <div className="absolute inset-0">
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
-          <ChatArea
-            ref={chatAreaRef}
-            messages={renderedMessages}
-            pageRecords={chatPageViewModel.pageRecords}
-            visibleMessages={chatPageViewModel.visibleMessages}
-            forkTargetIdMap={chatPageViewModel.forkTargetIdMap}
-            turnDurationMap={chatPageViewModel.turnDurationMap}
-            sessionId={routeSessionId}
-            isStreaming={isStreaming}
-            allowStreamingLayoutAnimation={isAtBottom}
-            loadState={renderedLoadState}
-            hasMoreHistory={hasMoreHistory}
-            onLoadMore={loadMoreHistory}
-            onUndo={handleUndoWithAnimation}
-            onFork={handleForkMessage}
-            onRegenerate={handleRegenerate}
-            canUndo={canUndo}
-            registerMessage={registerMessage}
-            retryStatus={retryStatus}
-            bottomPadding={inputBoxHeight}
-            onVisibleMessageIdsChange={handleVisibleIdsChange}
-            onAtBottomChange={setIsAtBottom}
-          />
+          <ErrorBoundary onOpenSettings={onOpenSettings}>
+            <ChatArea
+              ref={chatAreaRef}
+              messages={renderedMessages}
+              pageRecords={chatPageViewModel.pageRecords}
+              visibleMessages={chatPageViewModel.visibleMessages}
+              forkTargetIdMap={chatPageViewModel.forkTargetIdMap}
+              turnDurationMap={chatPageViewModel.turnDurationMap}
+              sessionId={routeSessionId}
+              isStreaming={isStreaming}
+              allowStreamingLayoutAnimation={isAtBottom}
+              loadState={renderedLoadState}
+              loadError={loadError}
+              connectionError={connectionError}
+              onOpenSettings={onOpenSettings}
+              hasMoreHistory={hasMoreHistory}
+              onLoadMore={loadMoreHistory}
+              onUndo={handleUndoWithAnimation}
+              onFork={handleForkMessage}
+              canUndo={canUndo}
+              registerMessage={registerMessage}
+              retryStatus={retryStatus}
+              bottomPadding={inputBoxHeight}
+              onVisibleMessageIdsChange={handleVisibleIdsChange}
+              onAtBottomChange={setIsAtBottom}
+            />
+          </ErrorBoundary>
         </InlineToolRequestContext.Provider>
       </div>
 
@@ -878,7 +948,7 @@ export const ChatPane = memo(function ChatPane({
           onAbort={handleAbort}
           onCommand={handleCommand}
           onNewChat={handleNewSession}
-          disabled={false}
+          disabled={inputDisabled}
           isStreaming={isStreaming}
           agents={agents}
           selectedAgent={selectedAgent}
@@ -976,6 +1046,7 @@ export const ChatPane = memo(function ChatPane({
   const content = (
     <SessionNavigationContext.Provider value={navigationCtx}>
       <div
+        ref={paneRootRef}
         className={
           showCompactShell
             ? `relative h-full flex flex-col overflow-hidden rounded-lg transition-all duration-200 ${
@@ -986,9 +1057,6 @@ export const ChatPane = memo(function ChatPane({
             : 'relative h-full flex flex-col overflow-hidden bg-bg-100'
         }
         onClick={handlePaneFocus}
-        onDragOver={handlePaneDragOver}
-        onDragLeave={handlePaneDragLeave}
-        onDrop={handlePaneDrop}
       >
         {chatContent}
         <PaneDropOverlay ref={overlayRef} />

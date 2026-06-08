@@ -14,12 +14,12 @@ import { todoStore } from './store/todoStore'
 import { autoApproveStore } from './store/autoApproveStore'
 import { serviceStore } from './store/serviceStore'
 import { reconnectSSE } from './api/events'
-import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
+import { abortInFlightApiRequests, getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
-import { notificationStore } from './store/notificationStore'
 import { clientDataStorage } from './lib/clientDataStorage'
+import { applyLocalServiceUrl } from './utils/localServiceUrl'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
 // 统一补齐，避免业务层 scattered fallback。
@@ -59,11 +59,12 @@ if (document.readyState === 'loading') {
   requestAnimationFrame(initOverlayScrollbars)
 }
 
-// 注册 server 切换 → 清理所有 server-specific 状态 + SSE 重连
+// 注册 active server 入口变化 → 清理 server-specific 状态 + 重建 SDK/SSE
 serverStore.onServerChange(() => {
+  abortInFlightApiRequests()
   invalidateSDKClient()
   if (isTauri()) {
-    void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server switch', err))
+    void getSDKClientAsync().catch(err => apiErrorHandler('reinitialize sdk client after server endpoint change', err))
   }
 
   // 重新拉取云端设置
@@ -81,71 +82,73 @@ serverStore.onServerChange(() => {
   // 4. 重新加载 auto-approve 开关状态（从新服务器的 storage key 读取）
   autoApproveStore.reloadFromStorage()
 
-  // 5. 重连 SSE（会自动连到新服务器）
+  // 5. 重连 SSE（会自动连到新的 server endpoint）
   reconnectSSE()
 })
 
 const isNativeTauri = isTauri()
 const isNativeTauriMobile = isNativeTauri && isTauriMobile()
 
-// Tauri 原生 app 初始化
-if (isNativeTauri) {
+interface StartOpencodeServiceResult {
+  started: boolean
+  startedByUs: boolean
+  url?: string | null
+}
+
+function configureNativeShell() {
+  if (!isNativeTauri) return
+
   // 添加 CSS class 用于 safe-area 适配
   document.documentElement.classList.add('tauri-app')
 
   // 确保 viewport meta 包含 viewport-fit=cover（用于状态栏沉浸式）
   const viewportMeta = document.querySelector('meta[name="viewport"]')
-  if (viewportMeta) {
-    const content = viewportMeta.getAttribute('content') || ''
-    if (!content.includes('viewport-fit=cover')) {
-      viewportMeta.setAttribute('content', content + ', viewport-fit=cover')
-    }
-  }
+  if (!viewportMeta) return
 
-  // Auto-start opencode serve（如果设置开启）
-  if (!isNativeTauriMobile && serviceStore.autoStart) {
-    const serverUrl = serverStore.getActiveServer()?.url || 'http://127.0.0.1:4096'
-    const binaryPath = serviceStore.effectiveBinaryPath
-    const doStart = () => {
-      import('@tauri-apps/api/core')
-        .then(({ invoke }) => {
-          serviceStore.setStarting(true)
-          invoke<boolean>('start_opencode_service', { url: serverUrl, binaryPath, envVars: serviceStore.envVarsRecord })
-            .then(weStarted => {
-              serviceStore.setStartedByUs(weStarted)
-              serviceStore.setRunning(true)
-              serviceStore.setStarting(false)
-              if (weStarted) {
-                console.info('[Service] opencode serve started by app')
-              } else {
-                console.info('[Service] opencode serve already running')
-              }
-            })
-            .catch(err => {
-              serviceStore.setStarting(false)
-              console.error('[Service] Failed to auto-start opencode serve:', err)
-              notificationStore.push(
-                'error',
-                'Service',
-                `Auto-start failed: ${String(err).slice(0, 120)}`,
-                '',
-              )
-            })
-        })
-        .catch(err => {
-          console.error('[Service] Failed to load Tauri API for auto-start:', err)
-          notificationStore.push(
-            'error',
-            'Service',
-            `Auto-start failed (API import error): ${String(err).slice(0, 120)}`,
-            '',
-          )
-        })
-    }
-    // 延迟执行，等 Tauri IPC 就绪
-    setTimeout(doStart, 500)
+  const content = viewportMeta.getAttribute('content') || ''
+  if (!content.includes('viewport-fit=cover')) {
+    viewportMeta.setAttribute('content', content + ', viewport-fit=cover')
   }
 }
+
+async function initializeNativeDesktopService() {
+  if (!isNativeTauri || isNativeTauriMobile || !serviceStore.autoStart) return
+
+  const serverUrl = serverStore.getLocalServerUrl()
+  serviceStore.setStarting(true)
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    try {
+      const path = await invoke<string | null>('detect_opencode_binary', { envVars: serviceStore.envVarsRecord })
+      serviceStore.setDetectedBinaryPath(path)
+    } catch {
+      // Starting with PATH fallback is still useful if detection fails.
+    }
+
+    const result = await invoke<StartOpencodeServiceResult>('start_opencode_service', {
+      url: serverUrl,
+      binaryPath: serviceStore.effectiveBinaryPath,
+      envVars: serviceStore.envVarsRecord,
+    })
+
+    applyLocalServiceUrl(result.url)
+    serviceStore.setStartedByUs(result.startedByUs)
+    serviceStore.setRunning(true)
+    if (result.started) {
+      console.info('[Service] opencode serve started by app')
+    } else {
+      console.info('[Service] opencode serve already running')
+    }
+  } catch (err) {
+    apiErrorHandler('auto-start opencode serve', err)
+  } finally {
+    serviceStore.setStarting(false)
+  }
+}
+
+configureNativeShell()
 
 // 全局错误处理 - 防止未捕获错误导致页面刷新
 window.addEventListener('error', event => {
@@ -172,6 +175,12 @@ function bootstrap() {
       </Suspense>
     </StrictMode>,
   )
+}
+
+function startApp() {
+  bootstrap()
+
+  void initializeNativeDesktopService()
 
   if (isNativeTauri) {
     void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
@@ -183,4 +192,4 @@ function bootstrap() {
   void clientDataStorage.init().catch(err => apiErrorHandler('initialize client data storage', err))
 }
 
-void bootstrap()
+startApp()

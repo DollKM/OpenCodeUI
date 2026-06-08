@@ -47,6 +47,7 @@ import {
 } from '../api'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
+import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import { getImageRecognitionModel } from '../utils/modelUtils'
@@ -69,6 +70,7 @@ const EMPTY_SESSION_STATE = {
   messages: [] as import('../types/message').Message[],
   isStreaming: false,
   loadState: 'idle' as const,
+  loadError: undefined,
   revertState: null,
   canUndo: false,
   canRedo: false,
@@ -130,6 +132,21 @@ export function useChatSession({
   const { sendNotification } = useNotification()
 
   const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
+  const routeSessionIdRef = useRef(routeSessionId)
+
+  useEffect(() => {
+    routeSessionIdRef.current = routeSessionId
+  }, [routeSessionId])
+
+  const handleMissingRouteSession = useCallback(
+    (missingSessionId: string) => {
+      if (routeSessionIdRef.current !== missingSessionId) return
+      clearSessionRuntimeState(missingSessionId)
+      navigateHome()
+    },
+    [navigateHome],
+  )
+
   const {
     items: queuedFollowups,
     sendingId: queuedFollowupSendingId,
@@ -148,6 +165,7 @@ export function useChatSession({
   const revertedContent = perSessionState.revertedContent
   const hasMoreHistory = perSessionState.hasMoreHistory
   const loadState = routeSessionId ? perSessionState.loadState : ('idle' as const)
+  const loadError = routeSessionId ? perSessionState.loadError : undefined
 
   // OpenAPI SessionStatus.retry: { attempt, message, next }
   const retryStatus = useMemo<LiveRetryStatus | null>(() => {
@@ -187,6 +205,7 @@ export function useChatSession({
   const { loadSession, loadMoreHistory, handleUndo, handleRedo, handleRedoAll, clearRevert } = useSessionManager({
     sessionId: routeSessionId,
     directory: currentDirectory,
+    onSessionMissing: handleMissingRouteSession,
   })
 
   // Permission handling
@@ -594,50 +613,44 @@ export function useChatSession({
     }) => {
       let sessionId = input.sessionId ?? routeSessionId
 
+      if (sessionId && input.allowCreateSession) {
+        const state = messageStore.getSessionState(sessionId)
+        if (state?.loadState === 'error' && state.messages.length === 0) {
+          clearSessionRuntimeState(sessionId)
+          sessionId = null
+        }
+      }
+
       // 检测是否需要图片识别子代理
       const hasImageAttachments = input.attachments.some(a => a.mime?.startsWith('image/'))
-      console.log(`[sendMessageNow] hasImageAttachments=${hasImageAttachments}, imageSupported=${input.imageSupported}, attachments=`, input.attachments.map(a => ({ name: a.displayName, mime: a.mime, url_preview: a.url?.slice(0, 80) })))
       const imageModelConfig = hasImageAttachments && !input.imageSupported ? getImageRecognitionModel() : null
-      console.log(`[sendMessageNow] imageModelConfig=`, imageModelConfig ? { providerId: imageModelConfig.providerId, modelId: imageModelConfig.modelId } : null)
 
       if (hasImageAttachments && !input.imageSupported && imageModelConfig) {
-        console.log('[sendMessageNow] 进入图片识别子代理分支')
         try {
           const firstImage = input.attachments.find(a => a.mime?.startsWith('image/'))
-          console.log(`[sendMessageNow] firstImage: name=${firstImage?.displayName}, hasUrl=${!!firstImage?.url}, url_length=${firstImage?.url?.length}`)
           if (!firstImage?.url) {
-            console.error('[sendMessageNow] 图片识别失败：firstImage.url 为空')
             handleError('image recognition', new Error('No image data found'))
             return false
           }
 
           const userPrompt = `请详细分析这张图片。\n\n${input.content}`
-          console.log(`[sendMessageNow] 调用 queryImage, provider=${imageModelConfig.providerId}, model=${imageModelConfig.modelId}, prompt_length=${userPrompt.length}`)
-
           const { text: description } = await queryImage({
             imageData: firstImage.url,
             provider: imageModelConfig.providerId,
             model: imageModelConfig.modelId,
             prompt: userPrompt,
           })
-          console.log(`[sendMessageNow] queryImage 成功, description_length=${description.length}, description_preview=${description.slice(0, 100)}`)
 
-          const textOnlyAttachments = input.attachments.filter(a => !a.mime?.startsWith('image/'))
-          console.log(`[sendMessageNow] 移除 ${input.attachments.length - textOnlyAttachments.length} 个图片附件，剩余 ${textOnlyAttachments.length} 个非图片附件`)
           input = {
             ...input,
             content: `${input.content}\n\n[图片描述：${description}]`,
-            attachments: textOnlyAttachments,
+            attachments: input.attachments.filter(a => !a.mime?.startsWith('image/')),
           }
         } catch (error) {
-          console.error('[sendMessageNow] 图片识别子代理异常:', error)
           handleError('image recognition', error)
           return false
         }
-      } else if (hasImageAttachments && !input.imageSupported) {
-        console.log('[sendMessageNow] 有图片附件但模型不支持图片且未配置图片识别模型，图片直接随消息发送')
-      } else if (hasImageAttachments && input.imageSupported) {
-        console.log('[sendMessageNow] 模型支持图片，图片直接随消息发送')
+      }
       }
 
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
@@ -1007,6 +1020,14 @@ export function useChatSession({
       let sessionId = routeSessionId
 
       try {
+        if (sessionId) {
+          const state = messageStore.getSessionState(sessionId)
+          if (state?.loadState === 'error' && state.messages.length === 0) {
+            clearSessionRuntimeState(sessionId)
+            sessionId = null
+          }
+        }
+
         // Create session if needed (like handleSend does)
         if (!sessionId) {
 
@@ -1188,6 +1209,7 @@ export function useChatSession({
     revertedContent,
     restoredContent: activeRestoredContent,
     loadState,
+    loadError,
     hasMoreHistory,
     retryStatus,
     agents,

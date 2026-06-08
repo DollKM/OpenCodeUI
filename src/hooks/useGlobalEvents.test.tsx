@@ -18,6 +18,7 @@ const {
   replyPermissionMock,
   childBelongsToSessionMock,
   getFocusedSessionIdMock,
+  getSessionAndDescendantsMock,
   notificationPushMock,
   playNotificationSoundDedupedMock,
   getSoundSnapshotMock,
@@ -25,7 +26,11 @@ const {
   activeSessionStoreMock,
   applyServerConnectedTimestampMock,
   getActiveServerIdMock,
+  checkHealthMock,
+  onServerChangeMock,
   autoApproveStoreMock,
+  clearSessionRuntimeStateMock,
+  clearPaneSessionMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
   getSessionStatusMock: vi.fn<(directory?: string) => Promise<Record<string, { type: string }>>>(() => Promise.resolve({})),
@@ -36,11 +41,16 @@ const {
   replyPermissionMock: vi.fn(() => Promise.resolve()),
   childBelongsToSessionMock: vi.fn<(sessionId: string, rootSessionId: string) => boolean>(() => false),
   getFocusedSessionIdMock: vi.fn<() => string | null>(() => null),
+  getSessionAndDescendantsMock: vi.fn((sessionId: string) => [sessionId]),
   notificationPushMock: vi.fn(),
   playNotificationSoundDedupedMock: vi.fn(),
   isSystemEnabledMock: vi.fn((type: string) => type !== 'permission'),
   applyServerConnectedTimestampMock: vi.fn(),
   getActiveServerIdMock: vi.fn(() => 'local'),
+  checkHealthMock: vi.fn(() => Promise.resolve({ status: 'online' })),
+  onServerChangeMock: vi.fn((_listener: (serverId: string) => void) => vi.fn()),
+  clearSessionRuntimeStateMock: vi.fn(),
+  clearPaneSessionMock: vi.fn(),
   getSoundSnapshotMock: vi.fn(() => ({
     currentSessionEnabled: true,
   })),
@@ -90,16 +100,20 @@ vi.mock('../store', () => ({
   },
   childSessionStore: {
     belongsToSession: childBelongsToSessionMock,
+    getSessionAndDescendants: getSessionAndDescendantsMock,
     markIdle: vi.fn(),
     markError: vi.fn(),
     registerChildSession: vi.fn(),
   },
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
+    clearSession: clearPaneSessionMock,
   },
   serverStore: {
     applyServerConnectedTimestamp: applyServerConnectedTimestampMock,
     getActiveServerId: getActiveServerIdMock,
+    checkHealth: checkHealthMock,
+    onServerChange: onServerChangeMock,
   },
 }))
 
@@ -129,6 +143,10 @@ vi.mock('../utils/notificationSoundBridge', () => ({
   playNotificationSoundDeduped: playNotificationSoundDedupedMock,
 }))
 
+vi.mock('../utils/sessionLifecycle', () => ({
+  clearSessionRuntimeState: (...args: unknown[]) => clearSessionRuntimeStateMock(...args),
+}))
+
 vi.mock('../store/autoApproveStore', () => ({
   autoApproveStore: autoApproveStoreMock,
 }))
@@ -142,12 +160,17 @@ describe('useGlobalEvents', () => {
     replyPermissionMock.mockClear()
     childBelongsToSessionMock.mockReset()
     getFocusedSessionIdMock.mockReset()
+    getSessionAndDescendantsMock.mockReset()
     notificationPushMock.mockReset()
     playNotificationSoundDedupedMock.mockReset()
     getSoundSnapshotMock.mockReset()
     isSystemEnabledMock.mockReset()
     applyServerConnectedTimestampMock.mockReset()
     getActiveServerIdMock.mockReset()
+    checkHealthMock.mockReset()
+    onServerChangeMock.mockReset()
+    clearSessionRuntimeStateMock.mockReset()
+    clearPaneSessionMock.mockReset()
     autoApproveStoreMock.fullAutoMode = 'off'
     autoApproveStoreMock.approvePendingOnFullAuto = false
     autoApproveStoreMock.subscribe.mockReset()
@@ -163,6 +186,9 @@ describe('useGlobalEvents', () => {
     })
     isSystemEnabledMock.mockImplementation((type: string) => type !== 'permission')
     getActiveServerIdMock.mockReturnValue('local')
+    checkHealthMock.mockResolvedValue({ status: 'online' })
+    onServerChangeMock.mockReturnValue(vi.fn())
+    getSessionAndDescendantsMock.mockImplementation((sessionId: string) => [sessionId])
     autoApproveStoreMock.subscribe.mockReturnValue(vi.fn())
     autoApproveStoreMock.claimAutoReply.mockReturnValue(true)
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Child Session', directory: '/workspace' })
@@ -183,6 +209,65 @@ describe('useGlobalEvents', () => {
     callbacks!.onServerConnected?.({ timestamp: '2026-04-22T15:00:00.000Z' })
 
     expect(applyServerConnectedTimestampMock).toHaveBeenCalledWith('local', '2026-04-22T15:00:00.000Z')
+  })
+
+  it('refreshes active server health on mount', async () => {
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(checkHealthMock).toHaveBeenCalledWith('local'))
+  })
+
+  it('refreshes health for the selected server when active server changes', async () => {
+    let onServerChange: ((serverId: string) => void) | undefined
+    onServerChangeMock.mockImplementation(listener => {
+      onServerChange = listener
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(onServerChange).toBeDefined())
+    checkHealthMock.mockClear()
+
+    onServerChange!('remote')
+
+    expect(checkHealthMock).toHaveBeenCalledWith('remote')
+  })
+
+  it('refreshes active server health when SSE reconnects', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    checkHealthMock.mockClear()
+
+    callbacks!.onReconnected?.('network')
+
+    expect(checkHealthMock).toHaveBeenCalledWith('local')
+  })
+
+  it('clears runtime state and panes when a session is deleted', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionAndDescendantsMock.mockReturnValue(['deleted-session', 'child-session'])
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onSessionDeleted?.('deleted-session')
+
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('deleted-session')
+    expect(clearPaneSessionMock).toHaveBeenCalledWith('deleted-session')
+    expect(clearPaneSessionMock).toHaveBeenCalledWith('child-session')
   })
 
   it('ignores stale initialization responses after directories change', async () => {

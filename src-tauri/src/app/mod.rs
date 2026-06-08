@@ -75,6 +75,22 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, ta
 }
 
 #[cfg(not(target_os = "android"))]
+fn create_hidden_content_window(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let builder = configure_desktop_window_builder(tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::App("index.html".into()),
+    ))
+    .title("OpenCode")
+    .inner_size(800.0, 600.0);
+
+    builder.visible(false).build()
+}
+
+#[cfg(not(target_os = "android"))]
 fn finish_desktop_window_setup(window: &tauri::WebviewWindow) {
     #[cfg(windows)]
     let _ = window.create_overlay_titlebar();
@@ -274,8 +290,11 @@ pub fn run() {
             commands::bridge::bridge_send,
             commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
+            commands::utils::get_dropped_paths_info,
+            commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,
+            commands::opencode::detect_opencode_binary,
             commands::opencode::start_opencode_service,
             commands::opencode::stop_opencode_service,
             commands::opencode::get_service_started_by_us,

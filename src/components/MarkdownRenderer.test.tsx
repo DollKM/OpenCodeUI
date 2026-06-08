@@ -6,6 +6,14 @@ const mermaidMocks = vi.hoisted(() => ({
   initialize: vi.fn(),
   render: vi.fn(async () => ({ svg: '<svg><title>Diagram</title></svg>' })),
 }))
+const useInputCapabilitiesMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    canHover: true,
+    hasCoarsePointer: false,
+    hasTouch: false,
+    preferTouchUi: false,
+  })),
+)
 
 vi.mock('./CodeBlock', () => ({
   CodeBlock: ({
@@ -13,19 +21,19 @@ vi.mock('./CodeBlock', () => ({
     language,
     variant,
     deferHighlight,
-    highlightDelayMs,
+    forceHighlight,
   }: {
     code: string
     language?: string
     variant?: string
     deferHighlight?: boolean
-    highlightDelayMs?: number
+    forceHighlight?: boolean
   }) => (
     <div
       data-testid="code-block"
       data-variant={variant ?? 'default'}
       data-defer-highlight={String(!!deferHighlight)}
-      data-highlight-delay={String(highlightDelayMs ?? 0)}
+      data-force-highlight={String(!!forceHighlight)}
     >
       {`${language ?? 'text'}:${code}`}
     </div>
@@ -34,6 +42,10 @@ vi.mock('./CodeBlock', () => ({
 
 vi.mock('../hooks/useTheme', () => ({
   useTheme: () => ({ resolvedTheme: 'light' }),
+}))
+
+vi.mock('../hooks/useInputCapabilities', () => ({
+  useInputCapabilities: () => useInputCapabilitiesMock(),
 }))
 
 vi.mock('mermaid', () => ({
@@ -50,6 +62,13 @@ vi.mock('./ui', () => ({
 
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
+    useInputCapabilitiesMock.mockReset()
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: true,
+      hasCoarsePointer: false,
+      hasTouch: false,
+      preferTouchUi: false,
+    })
     mermaidMocks.initialize.mockClear()
     mermaidMocks.render.mockClear()
     mermaidMocks.render.mockResolvedValue({ svg: '<svg><title>Diagram</title></svg>' })
@@ -114,18 +133,18 @@ describe('MarkdownRenderer', () => {
     expect(block.dataset.variant).toBe('default')
   })
 
-  it('debounces code block highlighting while content is streaming', () => {
+  it('starts code block highlighting while content is streaming', () => {
     render(<MarkdownRenderer content={'```ts\nconst x = 1\n```'} isStreaming />)
 
     expect(screen.getByTestId('code-block')).toHaveAttribute('data-defer-highlight', 'false')
-    expect(screen.getByTestId('code-block')).toHaveAttribute('data-highlight-delay', '48')
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-force-highlight', 'true')
   })
 
   it('keeps the declared language for an incomplete streaming code fence', () => {
     render(<MarkdownRenderer content={'```ts\nconst x = 1'} isStreaming />)
 
     expect(screen.getByTestId('code-block')).toHaveTextContent('ts:const x = 1')
-    expect(screen.getByTestId('code-block')).toHaveAttribute('data-highlight-delay', '48')
+    expect(screen.getByTestId('code-block')).toHaveAttribute('data-force-highlight', 'true')
   })
 
   it('reserves enough marker space for large ordered list numbers', () => {
@@ -155,6 +174,8 @@ describe('MarkdownRenderer', () => {
 
     const diagram = await screen.findByRole('img', { name: 'Mermaid diagram' })
 
+    expect(screen.queryByRole('button', { name: 'Enable diagram pan' })).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in diagram' }))
     expect(diagram).toHaveStyle({ transform: 'translate(0px, 0px) scale(1.15)' })
 
@@ -165,6 +186,68 @@ describe('MarkdownRenderer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset diagram view' }))
     expect(diagram).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+  })
+
+  it('keeps desktop controls for hover-capable touch input', async () => {
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: true,
+      hasCoarsePointer: false,
+      hasTouch: true,
+      preferTouchUi: false,
+    })
+
+    render(<MarkdownRenderer content={'```mermaid\ngraph TD\n  A-->B\n```'} />)
+
+    const diagram = await screen.findByRole('img', { name: 'Mermaid diagram' })
+
+    expect(screen.queryByRole('button', { name: 'Enable diagram pan' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zoom in diagram' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zoom out diagram' })).toBeInTheDocument()
+    expect(diagram.className).toContain('touch-pan-y')
+  })
+
+  it('uses tap-to-reveal mermaid controls for touch-preferred input', async () => {
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: false,
+      hasCoarsePointer: true,
+      hasTouch: true,
+      preferTouchUi: true,
+    })
+
+    render(<MarkdownRenderer content={'```mermaid\ngraph TD\n  A-->B\n```'} />)
+
+    const diagram = await screen.findByRole('img', { name: 'Mermaid diagram' })
+    const container = diagram.parentElement
+    const toolbar = screen.getByRole('button', { name: 'Copy to clipboard' }).parentElement
+
+    expect(container).toHaveAttribute('tabindex', '0')
+    expect(toolbar?.className).toContain('[@media(hover:none)]:opacity-0')
+    expect(diagram.className).toContain('touch-pan-y')
+    expect(screen.queryByRole('button', { name: 'Zoom in diagram' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Zoom out diagram' })).not.toBeInTheDocument()
+
+    fireEvent.pointerDown(diagram, { clientX: 10, clientY: 20, pointerId: 2, pointerType: 'touch' })
+    fireEvent.pointerMove(diagram, { clientX: 35, clientY: 55, pointerId: 2, pointerType: 'touch' })
+    expect(diagram).toHaveStyle({ transform: 'translate(0px, 0px) scale(1)' })
+
+    fireEvent.click(diagram)
+    expect(container).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enable diagram pan' }))
+    const panButton = screen.getByRole('button', { name: 'Disable diagram pan' })
+    expect(panButton).toHaveAttribute('aria-pressed', 'true')
+    expect(panButton.className).toContain('ring-accent-main-100')
+    expect(diagram.className).toContain('touch-none')
+
+    fireEvent.pointerDown(diagram, { clientX: 10, clientY: 20, pointerId: 3, pointerType: 'touch' })
+    fireEvent.pointerMove(diagram, { clientX: 35, clientY: 55, pointerId: 3, pointerType: 'touch' })
+    expect(diagram).toHaveStyle({ transform: 'translate(25px, 35px) scale(1)' })
+    fireEvent.pointerUp(diagram, { pointerId: 3, pointerType: 'touch' })
+
+    fireEvent.pointerDown(diagram, { clientX: 100, clientY: 100, pointerId: 4, pointerType: 'touch' })
+    fireEvent.pointerDown(diagram, { clientX: 140, clientY: 100, pointerId: 5, pointerType: 'touch' })
+    fireEvent.pointerMove(diagram, { clientX: 180, clientY: 100, pointerId: 5, pointerType: 'touch' })
+    expect(diagram).toHaveStyle({ transform: 'translate(-50px, -30px) scale(2)' })
   })
 
   it('renders markdown table with copy button in default mode', () => {
@@ -192,5 +275,32 @@ describe('MarkdownRenderer', () => {
     expect(img).toBeInTheDocument()
     expect(img.tagName).toBe('IMG')
     expect(screen.queryByTitle('Download image')).not.toBeInTheDocument()
+  })
+
+  it('renders Windows absolute path links without blocked indicator', () => {
+    const filePath = 'G:/projects/koishi_projects/koishi-new/external/chatluna/packages/core/src/commands/conversation.ts'
+    render(<MarkdownRenderer content={`[conversation.ts](${filePath})`} />)
+
+    const link = screen.getByRole('link', { name: 'conversation.ts' })
+    expect(link).toHaveAttribute('href', `#opencode-local-file:${encodeURIComponent(filePath)}`)
+    expect(link).toHaveAttribute('title', filePath)
+    expect(screen.queryByText(/\[blocked\]/)).not.toBeInTheDocument()
+  })
+
+  it('renders Windows backslash path links without blocked indicator', () => {
+    const filePath = 'C:\\Users\\test\\projects\\assets\\script.js'
+    render(<MarkdownRenderer content={`[script.js](${filePath})`} />)
+
+    const link = screen.getByRole('link', { name: 'script.js' })
+    expect(link).toHaveAttribute('href', `#opencode-local-file:${encodeURIComponent(filePath)}`)
+    expect(link).toHaveAttribute('title', filePath)
+    expect(screen.queryByText(/\[blocked\]/)).not.toBeInTheDocument()
+  })
+
+  it('still blocks unsafe javascript links', () => {
+    render(<MarkdownRenderer content={'[bad](javascript:alert(1))'} />)
+
+    expect(screen.getByText('bad [blocked]')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'bad' })).not.toBeInTheDocument()
   })
 })

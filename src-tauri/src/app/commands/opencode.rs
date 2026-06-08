@@ -4,12 +4,32 @@
 // ============================================
 
 use crate::app::service::ServiceState;
+use serde::Serialize;
 use std::{
-    process::{Command, Stdio},
-    sync::atomic::Ordering,
+    collections::VecDeque,
+    env,
+    ffi::OsString,
+    io::{BufRead, BufReader, Read},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::{atomic::Ordering, mpsc},
+    thread,
     time::Duration,
 };
 use tauri::State;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartOpencodeServiceResult {
+    started: bool,
+    started_by_us: bool,
+    url: Option<String>,
+}
+
+struct SpawnedOpencodeServe {
+    child: Child,
+    output: mpsc::Receiver<String>,
+}
 
 /// 检查 opencode 服务是否在运行（通过 health endpoint）
 pub async fn is_service_running(url: &str) -> bool {
@@ -29,13 +49,19 @@ pub async fn is_service_running(url: &str) -> bool {
     }
 }
 
-/// 构建并执行 Command，返回子进程
-fn build_opencode_command(
+/// 启动 opencode serve 进程，返回带输出通道的 SpawnedOpencodeServe
+fn spawn_opencode_serve(
     binary_path: &str,
     env_vars: &std::collections::HashMap<String, String>,
-) -> Command {
-    let mut cmd = Command::new(binary_path);
-    cmd.arg("serve").arg("--hostname").arg("0.0.0.0").stdout(Stdio::null()).stderr(Stdio::null());
+) -> Result<SpawnedOpencodeServe, String> {
+    log::info!("Starting opencode serve with binary: {}", binary_path);
+    if !env_vars.is_empty() {
+        log::info!("Injecting {} environment variable(s)", env_vars.len());
+    }
+
+    let serve_args = ["serve".to_string(), "--hostname".to_string(), "0.0.0.0".to_string()];
+    let mut cmd = build_opencode_command(binary_path, &serve_args);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     // 注入用户配置的环境变量
     for (key, value) in env_vars {
@@ -49,7 +75,51 @@ fn build_opencode_command(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    cmd
+    // 尝试启动，裸名字时回退到 app 目录 / npm 全局
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            let is_bare_name = !binary_path.contains('/') && !binary_path.contains('\\');
+            if !is_bare_name {
+                return Err(format!(
+                    "Failed to start '{}': not found. Check that the path is correct.",
+                    binary_path
+                ));
+            }
+            let mut tried: Vec<String> = Vec::new();
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let alt = exe_dir.join(binary_path);
+                    tried.push(format!("app dir ({})", alt.display()));
+                    if alt.exists() {
+                        log::info!("Falling back to app-relative path: {:?}", alt);
+                        return try_exec(&alt, binary_path, env_vars);
+                    }
+                }
+            }
+            if let Some(found) = search_npm_global_binary(binary_path) {
+                tried.push(format!("npm global ({})", found.display()));
+                return try_exec(&found, binary_path, env_vars);
+            }
+            return Err(format!(
+                "Failed to start '{}': not found in PATH, app directory, or npm global directories.\n\
+                 Tried: {}.\n\
+                 Please install opencode or set the correct binary path in Settings.",
+                binary_path,
+                if tried.is_empty() { "no fallback locations".into() } else { tried.join("; ") }
+            ));
+        }
+    };
+
+    let (tx, output) = mpsc::channel();
+    if let Some(stdout) = child.stdout.take() {
+        spawn_output_reader(stdout, tx.clone());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_output_reader(stderr, tx);
+    }
+
+    Ok(SpawnedOpencodeServe { child, output })
 }
 
 /// 当 `name` 是裸名字时，在已知的 npm 全局安装位置中搜索
@@ -60,7 +130,6 @@ fn search_npm_global_binary(name: &str) -> Option<std::path::PathBuf> {
         name.to_string()
     };
 
-    // 用于检测 npm 全局 bin 目录的关键词
     fn is_npm_bin_dir(dir: &std::path::Path) -> bool {
         let s = dir.to_string_lossy().to_lowercase();
         s.ends_with("node_global")
@@ -70,13 +139,11 @@ fn search_npm_global_binary(name: &str) -> Option<std::path::PathBuf> {
             || s.contains("node_modules/.bin")
     }
 
-    // 扫描 PATH 中的 npm 相关目录
     if let Ok(path_env) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_env) {
             if !is_npm_bin_dir(&dir) {
                 continue;
             }
-            // npm 包可执行文件通常位于 {prefix}/node_modules/{package}/bin/{name}.exe
             let candidate = dir
                 .join("node_modules")
                 .join("opencode-ai")
@@ -89,7 +156,6 @@ fn search_npm_global_binary(name: &str) -> Option<std::path::PathBuf> {
         }
     }
 
-    // Windows: 检查默认的 AppData npm 位置
     #[cfg(target_os = "windows")]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
@@ -105,7 +171,6 @@ fn search_npm_global_binary(name: &str) -> Option<std::path::PathBuf> {
                 return Some(candidate);
             }
         }
-        // 也检查 LOCALAPPDATA
         if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
             let candidate = std::path::Path::new(&localappdata)
                 .join("npm")
@@ -123,87 +188,179 @@ fn search_npm_global_binary(name: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-/// 启动 opencode serve 进程
-///
-/// 先在 PATH 中搜索 binary_path；如果找不到且 binary_path 是裸名字，
-/// 会自动在以下位置查找：
-/// 1. 应用可执行文件所在目录
-/// 2. npm 全局安装目录（node_global、%APPDATA%/npm 等）
-fn spawn_opencode_serve(
-    binary_path: &str,
-    env_vars: &std::collections::HashMap<String, String>,
-) -> Result<std::process::Child, String> {
-    log::info!("Starting opencode serve with binary: {}", binary_path);
-    if !env_vars.is_empty() {
-        log::info!("Injecting {} environment variable(s)", env_vars.len());
-    }
-
-    // 先尝试直接启动（会在 PATH 中搜索裸名字）
-    match build_opencode_command(binary_path, env_vars).spawn() {
-        Ok(child) => return Ok(child),
-        Err(_) => {
-            let is_bare_name = !binary_path.contains('/') && !binary_path.contains('\\');
-            if !is_bare_name {
-                return Err(format!(
-                    "Failed to start '{}': not found. Check that the path is correct.",
-                    binary_path
-                ));
-            }
-
-            // 裸名字 → 尝试回退查找
-            let mut tried: Vec<String> = Vec::new();
-
-            // 1) 应用自身所在目录
-            if let Ok(exe_path) = std::env::current_exe() {
-                if let Some(exe_dir) = exe_path.parent() {
-                    let alt = exe_dir.join(binary_path);
-                    tried.push(format!("app dir ({})", alt.display()));
-                    if alt.exists() {
-                        log::info!("Falling back to app-relative path: {:?}", alt);
-                        return try_exec(&alt, binary_path, env_vars);
-                    }
-                }
-            }
-
-            // 2) npm 全局安装目录
-            if let Some(found) = search_npm_global_binary(binary_path) {
-                tried.push(format!("npm global ({})", found.display()));
-                return try_exec(&found, binary_path, env_vars);
-            }
-
-            // 所有尝试都失败
-            Err(format!(
-                "Failed to start '{}': not found in PATH, app directory, or npm global directories.\n\
-                 Tried: {}.\n\
-                 Please install opencode or set the correct binary path in Settings.",
-                binary_path,
-                if tried.is_empty() {
-                    "no fallback locations".into()
-                } else {
-                    tried.join("; ")
-                }
-            ))
-        }
-    }
-}
-
 /// 尝试执行 resolved 路径的二进制文件，失败时返回带上下文的错误
 fn try_exec(
     resolved: &std::path::Path,
     _original_name: &str,
     env_vars: &std::collections::HashMap<String, String>,
-) -> Result<std::process::Child, String> {
+) -> Result<SpawnedOpencodeServe, String> {
     let path_str = resolved.to_string_lossy().to_string();
-    build_opencode_command(&path_str, env_vars)
-        .spawn()
-        .map_err(|e| {
-            format!(
-                "Found opencode at '{}' but failed to execute: {}. \
-                 The file may be corrupted or have permission issues.",
-                resolved.display(),
-                e
-            )
-        })
+    let serve_args = ["serve".to_string(), "--hostname".to_string(), "0.0.0.0".to_string()];
+    let mut cmd = build_opencode_command(&path_str, &serve_args);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    for (key, value) in env_vars {
+        cmd.env(key, value);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| {
+        format!(
+            "Found opencode at '{}' but failed to execute: {}. \
+             The file may be corrupted or have permission issues.",
+            resolved.display(),
+            e
+        )
+    })?;
+
+    let (tx, output) = mpsc::channel();
+    if let Some(stdout) = child.stdout.take() {
+        spawn_output_reader(stdout, tx.clone());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_output_reader(stderr, tx);
+    }
+
+    Ok(SpawnedOpencodeServe { child, output })
+}
+
+fn spawn_output_reader<R>(reader: R, tx: mpsc::Sender<String>)
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut tx = Some(tx);
+        for line in BufReader::new(reader).lines().map_while(Result::ok) {
+            if let Some(sender) = tx.as_ref() {
+                if sender.send(line).is_err() {
+                    tx = None;
+                }
+            }
+        }
+    });
+}
+
+fn parse_listening_url(line: &str) -> Option<String> {
+    let start = line.find("http://").or_else(|| line.find("https://"))?;
+    let raw_url = line[start..]
+        .split_whitespace()
+        .next()?
+        .trim_end_matches(|c| matches!(c, ',' | ';' | ')'));
+    let normalized = raw_url
+        .replace("http://0.0.0.0:", "http://127.0.0.1:")
+        .replace("https://0.0.0.0:", "https://127.0.0.1:");
+    let parsed = reqwest::Url::parse(&normalized).ok()?;
+
+    Some(parsed.to_string().trim_end_matches('/').to_string())
+}
+
+fn remember_recent_output(recent_output: &mut VecDeque<String>, line: String) {
+    if recent_output.len() >= 8 {
+        recent_output.pop_front();
+    }
+    recent_output.push_back(line);
+}
+
+fn format_recent_output(recent_output: &VecDeque<String>) -> String {
+    if recent_output.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        " Recent output: {}",
+        recent_output
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" | ")
+    )
+}
+
+fn build_opencode_command(binary_path: &str, args: &[String]) -> Command {
+    #[cfg(target_os = "windows")]
+    {
+        let path = Path::new(binary_path);
+        let ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let requires_shell = ext.eq_ignore_ascii_case("cmd")
+            || ext.eq_ignore_ascii_case("bat")
+            || path.extension().is_none();
+
+        if requires_shell {
+            let mut cmd = Command::new("cmd.exe");
+            cmd.arg("/C").arg(binary_path).args(args);
+            return cmd;
+        }
+    }
+
+    let mut cmd = Command::new(binary_path);
+    cmd.args(args);
+    cmd
+}
+
+fn patched_env_var(
+    env_vars: &std::collections::HashMap<String, String>,
+    key: &str,
+) -> Option<OsString> {
+    for (env_key, value) in env_vars {
+        if env_key.eq_ignore_ascii_case(key) {
+            return Some(OsString::from(value));
+        }
+    }
+    env::var_os(key)
+}
+
+fn path_candidates(env_vars: &std::collections::HashMap<String, String>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(bin) = patched_env_var(env_vars, "OPENCODE_BIN") {
+        if !bin.is_empty() {
+            candidates.push(PathBuf::from(bin));
+        }
+    }
+
+    let Some(path) = patched_env_var(env_vars, "PATH") else {
+        return candidates;
+    };
+
+    let names: Vec<&str> = if cfg!(windows) {
+        vec!["opencode.exe", "opencode.cmd", "opencode.bat", "opencode"]
+    } else {
+        vec!["opencode"]
+    };
+
+    for dir in env::split_paths(&path) {
+        for name in &names {
+            candidates.push(dir.join(name));
+        }
+    }
+
+    candidates
+}
+
+fn is_runnable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+/// 自动检测 opencode 可执行文件，行为接近直接在终端输入 `opencode`。
+#[tauri::command]
+pub async fn detect_opencode_binary(
+    env_vars: std::collections::HashMap<String, String>,
+) -> Result<Option<String>, String> {
+    for candidate in path_candidates(&env_vars) {
+        if is_runnable_file(&candidate) {
+            return Ok(Some(candidate.to_string_lossy().to_string()));
+        }
+    }
+
+    Ok(None)
 }
 
 /// 跨平台杀进程
@@ -243,29 +400,82 @@ pub async fn start_opencode_service(
     url: String,
     binary_path: String,
     env_vars: std::collections::HashMap<String, String>,
-) -> Result<bool, String> {
-    if is_service_running(&url).await {
-        log::info!("opencode service already running at {}", url);
-        return Ok(false);
+) -> Result<StartOpencodeServiceResult, String> {
+    if state.we_started.load(Ordering::SeqCst) {
+        let current_url = state.service_url.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(current_url) = current_url {
+            if is_service_running(&current_url).await {
+                log::info!("opencode service already running at {}", current_url);
+                return Ok(StartOpencodeServiceResult {
+                    started: false,
+                    started_by_us: true,
+                    url: Some(current_url),
+                });
+            }
+        }
     }
 
-    let child = spawn_opencode_serve(&binary_path, &env_vars)?;
-    let pid = child.id();
+    if is_service_running(&url).await {
+        log::info!("opencode service already running at {}", url);
+        return Ok(StartOpencodeServiceResult {
+            started: false,
+            started_by_us: false,
+            url: Some(url),
+        });
+    }
+
+    let mut spawned = spawn_opencode_serve(&binary_path, &env_vars)?;
+    let pid = spawned.child.id();
     log::info!("Started opencode serve, PID: {}", pid);
 
     state.child_pid.store(pid, Ordering::SeqCst);
     state.we_started.store(true, Ordering::SeqCst);
+    *state.service_url.lock().map_err(|e| e.to_string())? = None;
+
+    let mut detected_url: Option<String> = None;
+    let mut recent_output = VecDeque::new();
 
     for _ in 0..30 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        if is_service_running(&url).await {
-            log::info!("opencode service is ready at {}", url);
-            return Ok(true);
+        while let Ok(line) = spawned.output.try_recv() {
+            if let Some(parsed_url) = parse_listening_url(&line) {
+                log::info!("Detected opencode serve URL: {}", parsed_url);
+                *state.service_url.lock().map_err(|e| e.to_string())? = Some(parsed_url.clone());
+                detected_url = Some(parsed_url);
+            }
+            remember_recent_output(&mut recent_output, line);
         }
+
+        if let Some(status) = spawned.child.try_wait().map_err(|e| e.to_string())? {
+            state.child_pid.store(0, Ordering::SeqCst);
+            state.we_started.store(false, Ordering::SeqCst);
+            *state.service_url.lock().map_err(|e| e.to_string())? = None;
+            return Err(format!(
+                "opencode serve exited during startup with status {}.{}",
+                status,
+                format_recent_output(&recent_output)
+            ));
+        }
+
+        let health_url = detected_url.as_deref().unwrap_or(&url);
+        if is_service_running(health_url).await {
+            log::info!("opencode service is ready at {}", health_url);
+            *state.service_url.lock().map_err(|e| e.to_string())? = Some(health_url.to_string());
+            return Ok(StartOpencodeServiceResult {
+                started: true,
+                started_by_us: true,
+                url: Some(health_url.to_string()),
+            });
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
     log::warn!("opencode service started but health check not passing yet");
-    Ok(true)
+    Ok(StartOpencodeServiceResult {
+        started: true,
+        started_by_us: true,
+        url: detected_url,
+    })
 }
 
 /// 停止 opencode serve
@@ -273,6 +483,7 @@ pub async fn start_opencode_service(
 pub async fn stop_opencode_service(state: State<'_, ServiceState>) -> Result<(), String> {
     let pid = state.child_pid.swap(0, Ordering::SeqCst);
     state.we_started.store(false, Ordering::SeqCst);
+    *state.service_url.lock().map_err(|e| e.to_string())? = None;
 
     if pid > 0 {
         log::info!("Stopping opencode serve, PID: {}", pid);
@@ -302,6 +513,7 @@ pub async fn confirm_close_app(
             kill_process_by_pid(pid);
         }
         state.we_started.store(false, Ordering::SeqCst);
+        *state.service_url.lock().map_err(|e| e.to_string())? = None;
     } else {
         log::info!("Closing app, keeping opencode serve running");
     }

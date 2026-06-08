@@ -62,10 +62,11 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
   }, [loadSkills])
 
   // Filter skills
+  const normalizedFilter = filter.toLowerCase()
   const filteredSkills = skills.filter(
     skill =>
-      skill.name.toLowerCase().includes(filter.toLowerCase()) ||
-      (skill.description ?? '').toLowerCase().includes(filter.toLowerCase()),
+      skill.name.toLowerCase().includes(normalizedFilter) ||
+      (skill.description ?? '').toLowerCase().includes(normalizedFilter),
   )
 
   // Sort by usage descending, preserve original order for ties

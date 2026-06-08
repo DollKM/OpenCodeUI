@@ -43,18 +43,21 @@ describe('useFileExplorer', () => {
     const { result } = renderHook(() => useFileExplorer({ directory: '/repo', autoLoad: true }))
 
     await waitFor(() => {
-      expect(result.current.tree).toHaveLength(2)
+      expect(result.current.fileStatus.get('src/turn.ts')?.status).toBe('added')
     })
-  })
 
-  it('loads git diff for file status', async () => {
-    const { result } = renderHook(() => useFileExplorer({ directory: '/repo', autoLoad: true }))
+    expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo')
+
+    act(() => {
+      changeScopeStore.setMode('session-1', 'session')
+    })
 
     await waitFor(() => {
-      expect(result.current.fileStatus.get('src/index.ts')?.status).toBe('modified')
+      expect(result.current.fileStatus.get('src/session.ts')?.status).toBe('modified')
     })
 
-    expect(getVcsDiff).toHaveBeenCalledWith('git', '/repo')
+    expect(result.current.fileStatus.get('src/turn.ts')).toBeUndefined()
+    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
   })
 
   it('restores expanded folders per directory when switching projects', async () => {
