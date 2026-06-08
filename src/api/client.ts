@@ -46,7 +46,7 @@ export async function getActiveModels(directory?: string): Promise<ModelInfo[]> 
   const models: ModelInfo[] = []
 
   for (const provider of data.providers) {
-    for (const [, model] of Object.entries(provider.models)) {
+    for (const model of Object.values(provider.models)) {
       if (model.status === 'active') {
         const variants = model.variants ? Object.keys(model.variants) : []
 
