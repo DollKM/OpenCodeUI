@@ -727,16 +727,22 @@ function InputBoxComponent({
     async (files: File[]) => {
       if (files.length === 0 || isSubmitting) return
 
+      console.log(`[InputBox] handleFilesSelected: ${files.length} files, fileCaps=`, JSON.stringify(fileCaps))
+
       const nextAttachments: Attachment[] = []
 
       for (const rawFile of files) {
         const file = ensureFileMime(rawFile)
 
         // 按 MIME 类型检查模型能力
-        if (!isFileSupported(file.type, fileCaps)) continue
+        if (!isFileSupported(file.type, fileCaps)) {
+          console.log(`[InputBox] file not supported: ${file.name} (${file.type})`)
+          continue
+        }
 
         try {
           const dataUrl = await readFileAsDataUrl(file)
+          console.log(`[InputBox] file processed: ${file.name}, type=${file.type}, url_length=${dataUrl.length}`)
 
           nextAttachments.push({
             id: crypto.randomUUID(),
@@ -751,7 +757,10 @@ function InputBoxComponent({
       }
 
       if (nextAttachments.length > 0) {
+        console.log(`[InputBox] setting ${nextAttachments.length} attachments`)
         setAttachments(prev => [...prev, ...nextAttachments])
+      } else {
+        console.log('[InputBox] no valid attachments after processing')
       }
     },
     [fileCaps, isSubmitting],
@@ -788,12 +797,17 @@ function InputBoxComponent({
         for (let i = 0; i < items.length; i++) {
           if (items[i].kind === 'file') {
             const file = items[i].getAsFile()
-            if (file && isFileSupported(ensureFileMime(file).type, fileCaps)) files.push(file)
+            if (file) {
+              const mime = ensureFileMime(file).type
+              console.log(`[InputBox] paste item[${i}]: name=${file.name}, mime=${mime}, supported=${isFileSupported(mime, fileCaps)}`)
+              if (isFileSupported(mime, fileCaps)) files.push(file)
+            }
           }
         }
       }
 
       if (files.length > 0) {
+        console.log(`[InputBox] paste: ${files.length} files to process`)
         e.preventDefault()
         void handleFilesSelected(files)
         return
