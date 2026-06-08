@@ -29,7 +29,7 @@ import {
 } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, useMessageStore, childSessionStore } from '../../../store'
-import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
+import { activeSessionStore, useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
 import type { NotificationEntry } from '../../../store/notificationStore'
 import {
@@ -398,6 +398,11 @@ export function SidePanel({
       )
       if (!cancelled && Object.keys(results).length > 0) {
         setFetchedSessions(prev => ({ ...prev, ...results }))
+        // 将拉取的 session 标题回写到 activeSessionStore，确保
+        // currentDirectory 切换后 entry.title 仍然可用
+        activeSessionStore.setSessionMetaBulk(
+          Object.values(results).map(s => ({ sessionId: s.id, title: s.title, directory: s.directory })),
+        )
       }
     }
     fetchMissing()
