@@ -18,11 +18,11 @@ import { sendMessageAsync } from '../api/message'
 import type { ApiProject, FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff, computePatchStats } from '../utils/diffUtils'
-import { findModelByKey, getCommitModel } from '../utils/modelUtils'
+import { getCommitModel, findModelByKey } from '../utils/modelUtils'
+import { useModels } from '../hooks/useModels'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
-import { useModels } from '../hooks/useModels'
 import { useSessionNavigation } from '../contexts/SessionNavigationContext'
 
 const MIN_LIST_HEIGHT = 80
@@ -76,24 +76,16 @@ export const GitChangesPanel = memo(function GitChangesPanel({
   const [viewMode, setViewMode] = useState<ViewMode>('unified')
   const [listMode, setListMode] = useState<'flat' | 'tree'>('flat')
 
-  // 模型选择 — 从设置-模型中读取全局配置
-  const { models: allModels } = useModels()
   const { navigateToSession } = useSessionNavigation()
   const [committing, setCommitting] = useState(false)
-  const [, forceRender] = useState(0)
 
-  // 窗口聚焦时重新读取提交模型（设置页面更改后生效）
-  useEffect(() => {
-    const onFocus = () => forceRender(v => v + 1)
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
-
-  const commitModel = (() => {
-    const saved = getCommitModel()
-    if (!saved || !allModels.length) return null
-    return findModelByKey(allModels, saved.modelKey) ?? null
-  })()
+  const { models: allModels } = useModels()
+  const commitModel = useMemo(() => getCommitModel(), [])
+  const commitModelName = useMemo(() => {
+    if (!commitModel) return ''
+    const model = findModelByKey(allModels, commitModel.modelKey)
+    return model?.name ?? `${commitModel.providerId}/${commitModel.modelId}`
+  }, [commitModel, allModels])
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [openDiffFiles, setOpenDiffFiles] = useState<string[]>([])
@@ -377,26 +369,16 @@ export const GitChangesPanel = memo(function GitChangesPanel({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {commitModel ? (
-              <span className="text-[length:var(--fs-xxs)] text-text-400 truncate max-w-[120px]">
-                {t('sessionChanges.commitModelLabel', { modelName: commitModel.name })}
-              </span>
-            ) : (
-              <span
-                className="text-[length:var(--fs-xxs)] text-warning-100/70"
-                title={t('sessionChanges.commitModelNotSetHint')}
-              >
-                {t('sessionChanges.commitModelNotSet')}
+            {commitModelName && (
+              <span className="inline-flex h-6 items-center px-1.5 text-[length:var(--fs-xxs)] text-text-400 truncate max-w-[100px]" title={commitModelName}>
+                {commitModelName}
               </span>
             )}
-
             <button
               type="button"
               disabled={committing || !commitModel || diffs.length === 0}
               onClick={async () => {
-                const saved = getCommitModel()
-                const model = saved ? findModelByKey(allModels, saved.modelKey) ?? null : null
-                if (!model) return
+                if (!commitModel) return
                 setCommitting(true)
                 try {
                   const newSession = await createSession({
@@ -408,8 +390,8 @@ export const GitChangesPanel = memo(function GitChangesPanel({
                     text: '按修改分批提交git',
                     attachments: [],
                     model: {
-                      providerID: model.providerId,
-                      modelID: model.id,
+                      providerID: commitModel.providerId,
+                      modelID: commitModel.modelId,
                     },
                     directory: directory || undefined,
                   })
