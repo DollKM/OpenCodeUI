@@ -19,6 +19,7 @@ export type FileContent = SDKFileContent
 export type FileStatusItem = SDKFile
 
 export type FileDiff = SDKSnapshotFileDiff & {
+  file: string
   before?: string
   after?: string
 }
