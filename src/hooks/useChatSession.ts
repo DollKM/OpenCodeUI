@@ -10,6 +10,7 @@ import {
   autoApproveStore,
   childSessionStore,
   useActiveSessionStore,
+  skillUsageStore,
   type RevertHistoryItem,
 } from '../store'
 import {
@@ -1032,6 +1033,11 @@ export function useChatSession({
           })
 
           return true
+        }
+
+        // 技能命令计数（在 executeCommand 之前，确保不管是否异步成功都记录）
+        if (skillUsageStore.isKnownSkill(command)) {
+          skillUsageStore.recordCommandSkill(command)
         }
 
         // Keep command submission semantics aligned with normal messages:

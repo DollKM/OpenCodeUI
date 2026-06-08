@@ -404,7 +404,11 @@ export function useGlobalEvents(directories?: string[]) {
             'name' in part.state.input &&
             typeof part.state.input.name === 'string'
           ) {
-            skillUsageStore.recordSkill(part.state.input.name)
+            const skillName = part.state.input.name
+            // 防止与命令执行计数重复
+            if (!skillUsageStore.wasRecentlyCommandRecorded(skillName)) {
+              skillUsageStore.recordSkill(skillName)
+            }
           }
         }
       },

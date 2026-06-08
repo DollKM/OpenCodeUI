@@ -5,11 +5,14 @@ import { clientDataStorage } from '../lib/clientDataStorage'
 
 type Subscriber = () => void
 
+const COMMAND_DEDUP_TTL_MS = 30_000
+
 class SkillUsageStore {
   private usage = new Map<string, number>()
   private subscribers = new Set<Subscriber>()
   private knownSkillNames = new Set<string>()
   private cachedUsage: Record<string, number> = {}
+  private commandRecordedTimestamps = new Map<string, number>()
 
   constructor() {
     this.load()
@@ -89,6 +92,21 @@ class SkillUsageStore {
     this.notify()
   }
 
+  recordCommandSkill(skillName: string) {
+    this.recordSkill(skillName)
+    this.commandRecordedTimestamps.set(skillName, Date.now())
+  }
+
+  wasRecentlyCommandRecorded(skillName: string): boolean {
+    const ts = this.commandRecordedTimestamps.get(skillName)
+    if (!ts) return false
+    if (Date.now() - ts > COMMAND_DEDUP_TTL_MS) {
+      this.commandRecordedTimestamps.delete(skillName)
+      return false
+    }
+    return true
+  }
+
   getUsage(): Record<string, number> {
     return this.cachedUsage
   }
@@ -103,6 +121,7 @@ class SkillUsageStore {
 
   clearAll() {
     this.usage.clear()
+    this.commandRecordedTimestamps.clear()
     this.rebuildCache()
     clientDataStorage.removeItem(STORAGE_KEY)
     this.notify()
