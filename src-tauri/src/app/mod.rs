@@ -291,7 +291,6 @@ pub fn run() {
             commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
             commands::utils::get_dropped_paths_info,
-            commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,
             commands::opencode::detect_opencode_binary,
