@@ -99,6 +99,7 @@ interface ChatAreaProps {
   onLoadMore?: () => void | Promise<void>
   onUndo?: (userMessageId: string) => void
   onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
+  onRegenerate?: () => void | Promise<void>
   canUndo?: boolean
   registerMessage?: (id: string, element: HTMLElement | null) => void
   retryStatus?: RetryStatusInlineData | null
@@ -131,6 +132,7 @@ export const ChatArea = memo(
         onLoadMore,
         onUndo,
         onFork,
+        onRegenerate,
         canUndo,
         hasMoreHistory: _hasMoreHistory = false,
         registerMessage,
@@ -193,6 +195,13 @@ export const ChatArea = memo(
         () => visibleMessagesProp ?? visibleMessageEntries.map(entry => entry.message),
         [visibleMessageEntries, visibleMessagesProp],
       )
+      const lastAssistantMessageId = useMemo(() => {
+        for (let i = visibleMessages.length - 1; i >= 0; i--) {
+          if (visibleMessages[i].info.role === 'assistant') return visibleMessages[i].info.id
+        }
+        return null
+      }, [visibleMessages])
+
       const pages = useMemo<StableChatPage[]>(
         () => (shouldUseExternalViewModel ? [] : buildContentKeyedChatPages(visibleMessages)),
         [shouldUseExternalViewModel, visibleMessages],
@@ -750,11 +759,13 @@ export const ChatArea = memo(
                   registerMessage={registerMessage}
                   onUndo={onUndo}
                   onFork={onFork}
+                  onRegenerate={onRegenerate}
                   canUndo={canUndo}
                   turnDurationMap={localTurnDurationMap}
                   forkTargetIdMap={localForkTargetIdMap}
                   allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
                   onMeasuredHeightChange={updateMeasuredPageHeight}
+                  lastAssistantMessageId={lastAssistantMessageId}
                 />
               ) : (
                 <CollapsedPagesBlock key={segment.key} height={segment.height} />
@@ -786,11 +797,13 @@ interface PageBlockProps {
   registerMessage?: (id: string, element: HTMLElement | null) => void
   onUndo?: (userMessageId: string) => void
   onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
+  onRegenerate?: () => void | Promise<void>
   canUndo?: boolean
   turnDurationMap: Map<string, number>
   forkTargetIdMap: Map<string, string | undefined>
   allowStreamingLayoutAnimation: boolean
   onMeasuredHeightChange: (pageKey: string, nextHeight: number) => void
+  lastAssistantMessageId: string | null
 }
 
 const PageBlock = memo(function PageBlock({
@@ -800,11 +813,13 @@ const PageBlock = memo(function PageBlock({
   registerMessage,
   onUndo,
   onFork,
+  onRegenerate,
   canUndo,
   turnDurationMap,
   forkTargetIdMap,
   allowStreamingLayoutAnimation,
   onMeasuredHeightChange,
+  lastAssistantMessageId,
 }: PageBlockProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
@@ -844,8 +859,10 @@ const PageBlock = memo(function PageBlock({
                       turnDuration={turnDurationMap.get(message.info.id)}
                       onUndo={onUndo}
                       onFork={onFork}
+                      onRegenerate={onRegenerate}
                       forkMessageId={forkTargetIdMap.get(message.info.id)}
                       canUndo={canUndo}
+                      isLastAssistant={message.info.id === lastAssistantMessageId}
                       onEnsureParts={NOOP}
                     />
                   </RenderedMessageItem>

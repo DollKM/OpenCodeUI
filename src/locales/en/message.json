@@ -6,6 +6,8 @@
   "undoFromHere": "Undo from here",
   "forkFromHere": "Fork from here",
   "forkingFromHere": "Forking...",
+  "regenerate": "Regenerate",
+  "regenerating": "Regenerating...",
   "stepsCount": "{{done}}/{{total}} steps",
   "tokens": "tokens",
   "tokensK": "{{count}}k tokens",

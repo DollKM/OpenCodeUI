@@ -272,6 +272,7 @@ export const ChatPane = memo(function ChatPane({
     handleUndoWithAnimation,
     handleRedoWithAnimation,
     handleForkMessage,
+    handleRegenerate,
     handleNewSession,
     handleVisibleMessageIdsChange,
     handleArchiveSession,
@@ -836,6 +837,7 @@ export const ChatPane = memo(function ChatPane({
             onLoadMore={loadMoreHistory}
             onUndo={handleUndoWithAnimation}
             onFork={handleForkMessage}
+            onRegenerate={handleRegenerate}
             canUndo={canUndo}
             registerMessage={registerMessage}
             retryStatus={retryStatus}

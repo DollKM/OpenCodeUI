@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect, useLayoutEffect, useMemo, useCallbac
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { animate } from 'motion/mini'
-import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
+import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon, RetryIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
 import { useDelayedRender, useModels } from '../../hooks'
 import { useTheme } from '../../hooks/useTheme'
@@ -46,8 +46,10 @@ interface MessageRendererProps {
   turnDuration?: number
   onUndo?: (userMessageId: string) => void
   onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  onRegenerate?: () => void | Promise<void>
   forkMessageId?: string
   canUndo?: boolean
+  isLastAssistant?: boolean
   onEnsureParts?: (messageId: string) => void
 }
 
@@ -57,8 +59,10 @@ export const MessageRenderer = memo(function MessageRenderer({
   turnDuration,
   onUndo,
   onFork,
+  onRegenerate,
   forkMessageId,
   canUndo,
+  isLastAssistant,
   onEnsureParts,
 }: MessageRendererProps) {
   const { info } = message
@@ -82,7 +86,9 @@ export const MessageRenderer = memo(function MessageRenderer({
       allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
       turnDuration={turnDuration}
       onFork={onFork}
+      onRegenerate={onRegenerate}
       forkMessageId={forkMessageId}
+      isLastAssistant={isLastAssistant}
       onEnsureParts={onEnsureParts}
     />
   )
@@ -239,6 +245,47 @@ const ForkActionButton = memo(function ForkActionButton({ message, onFork, forkM
 })
 
 // ============================================
+// Regenerate Action Button
+// ============================================
+
+interface RegenerateActionButtonProps {
+  onRegenerate?: () => void | Promise<void>
+}
+
+const RegenerateActionButton = memo(function RegenerateActionButton({ onRegenerate }: RegenerateActionButtonProps) {
+  const { t } = useTranslation('message')
+  const [isRegenerating, setIsRegenerating] = useState(false)
+
+  const handleRegenerate = useCallback(async () => {
+    if (!onRegenerate || isRegenerating) return
+
+    setIsRegenerating(true)
+
+    try {
+      await onRegenerate()
+    } catch {
+      // 业务错误由上层统一处理
+    } finally {
+      setIsRegenerating(false)
+    }
+  }, [isRegenerating, onRegenerate])
+
+  if (!onRegenerate) return null
+
+  return (
+    <button
+      onClick={() => void handleRegenerate()}
+      disabled={isRegenerating}
+      className="p-1.5 rounded-md transition-colors duration-150 text-text-400 hover:text-text-200 disabled:cursor-default disabled:text-text-500"
+      title={isRegenerating ? t('regenerating') : t('regenerate')}
+      aria-label={isRegenerating ? t('regenerating') : t('regenerate')}
+    >
+      {isRegenerating ? <SpinnerIcon className="animate-spin" /> : <RetryIcon />}
+    </button>
+  )
+})
+
+// ============================================
 // User Message View
 // ============================================
 
@@ -366,14 +413,18 @@ const AssistantMessageView = memo(function AssistantMessageView({
   allowStreamingLayoutAnimation = true,
   turnDuration,
   onFork,
+  onRegenerate,
   forkMessageId,
+  isLastAssistant,
   onEnsureParts,
 }: {
   message: Message
   allowStreamingLayoutAnimation?: boolean
   turnDuration?: number
   onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  onRegenerate?: () => void | Promise<void>
   forkMessageId?: string
+  isLastAssistant?: boolean
   onEnsureParts?: (messageId: string) => void
 }) {
   const { t } = useTranslation('message')
@@ -532,6 +583,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
 
       {hasCopyableText && (
         <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 transition-opacity">
+          {isLastAssistant && !isStreaming && <RegenerateActionButton onRegenerate={onRegenerate} />}
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
           <CopyButton text={fullText} position="static" />
         </div>

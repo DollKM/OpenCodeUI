@@ -6,6 +6,8 @@
   "undoFromHere": "从此处撤销",
   "forkFromHere": "从此处分叉",
   "forkingFromHere": "正在分叉...",
+  "regenerate": "重新生成",
+  "regenerating": "正在重新生成...",
   "stepsCount": "{{done}}/{{total}} steps",
   "tokens": "token",
   "tokensK": "{{count}}k token",

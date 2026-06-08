@@ -42,6 +42,7 @@ import {
   type ApiAgent,
   type Attachment,
   type ModelInfo,
+  queryImage,
 } from '../api'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
@@ -51,7 +52,6 @@ import { getImageRecognitionModel } from '../utils/modelUtils'
 import type { ChatAreaHandle } from '../features/chat'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
-import { directChat } from '../api/directChat'
 
 const handleError = createErrorHandler('session')
 
@@ -595,39 +595,48 @@ export function useChatSession({
 
       // 检测是否需要图片识别子代理
       const hasImageAttachments = input.attachments.some(a => a.mime?.startsWith('image/'))
+      console.log(`[sendMessageNow] hasImageAttachments=${hasImageAttachments}, imageSupported=${input.imageSupported}, attachments=`, input.attachments.map(a => ({ name: a.displayName, mime: a.mime, url_preview: a.url?.slice(0, 80) })))
       const imageModelConfig = hasImageAttachments && !input.imageSupported ? getImageRecognitionModel() : null
+      console.log(`[sendMessageNow] imageModelConfig=`, imageModelConfig ? { providerId: imageModelConfig.providerId, modelId: imageModelConfig.modelId } : null)
 
       if (hasImageAttachments && !input.imageSupported && imageModelConfig) {
+        console.log('[sendMessageNow] 进入图片识别子代理分支')
         try {
-          const textParts = input.content
-            ? [{ type: 'text' as const, text: input.content }]
-            : []
-          const imageParts = input.attachments
-            .filter(a => a.mime?.startsWith('image/'))
-            .map(a => ({
-              type: 'image_url' as const,
-              image_url: { url: a.url },
-            }))
+          const firstImage = input.attachments.find(a => a.mime?.startsWith('image/'))
+          console.log(`[sendMessageNow] firstImage: name=${firstImage?.displayName}, hasUrl=${!!firstImage?.url}, url_length=${firstImage?.url?.length}`)
+          if (!firstImage?.url) {
+            console.error('[sendMessageNow] 图片识别失败：firstImage.url 为空')
+            handleError('image recognition', new Error('No image data found'))
+            return false
+          }
 
-          const description = await directChat({
-            model: `${imageModelConfig.providerId}/${imageModelConfig.modelId}`,
-            messages: [{
-              role: 'user',
-              content: [...textParts, ...imageParts],
-            }],
-            system: '你是一个图片识别助手。请根据用户的提问简洁准确地描述图片内容。',
+          const userPrompt = `请详细分析这张图片。\n\n${input.content}`
+          console.log(`[sendMessageNow] 调用 queryImage, provider=${imageModelConfig.providerId}, model=${imageModelConfig.modelId}, prompt_length=${userPrompt.length}`)
+
+          const { text: description } = await queryImage({
+            imageData: firstImage.url,
+            provider: imageModelConfig.providerId,
+            model: imageModelConfig.modelId,
+            prompt: userPrompt,
           })
+          console.log(`[sendMessageNow] queryImage 成功, description_length=${description.length}, description_preview=${description.slice(0, 100)}`)
 
           const textOnlyAttachments = input.attachments.filter(a => !a.mime?.startsWith('image/'))
+          console.log(`[sendMessageNow] 移除 ${input.attachments.length - textOnlyAttachments.length} 个图片附件，剩余 ${textOnlyAttachments.length} 个非图片附件`)
           input = {
             ...input,
             content: `${input.content}\n\n[图片描述：${description}]`,
             attachments: textOnlyAttachments,
           }
         } catch (error) {
+          console.error('[sendMessageNow] 图片识别子代理异常:', error)
           handleError('image recognition', error)
           return false
         }
+      } else if (hasImageAttachments && !input.imageSupported) {
+        console.log('[sendMessageNow] 有图片附件但模型不支持图片且未配置图片识别模型，图片直接随消息发送')
+      } else if (hasImageAttachments && input.imageSupported) {
+        console.log('[sendMessageNow] 模型支持图片，图片直接随消息发送')
       }
 
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
@@ -913,6 +922,57 @@ export function useChatSession({
     [effectiveDirectory, messages, navigateToSession],
   )
 
+  // Regenerate — 撤销最后一条 AI 回复并重新发送用户消息
+  const handleRegenerate = useCallback(async () => {
+    if (!routeSessionId || isStreaming) return
+
+    // 找到最后一条 assistant 消息
+    let lastAssistantIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'assistant') {
+        lastAssistantIdx = i
+        break
+      }
+    }
+    if (lastAssistantIdx === -1) return
+
+    // 找到前面的 user 消息
+    let userMessageIdx = -1
+    for (let i = lastAssistantIdx - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'user') {
+        userMessageIdx = i
+        break
+      }
+    }
+    if (userMessageIdx === -1) return
+
+    const userMessage = messages[userMessageIdx]
+    if (!isUserMessage(userMessage.info)) return
+
+    const content = extractUserMessageContent(userMessage)
+
+    try {
+      await handleUndo(userMessage.info.id)
+      await sendMessageNow({
+        sessionId: routeSessionId,
+        content: content.text,
+        attachments: content.attachments,
+        model: {
+          providerID: userMessage.info.model.providerID,
+          modelID: userMessage.info.model.modelID,
+        },
+        imageSupported: currentModel?.supportsImages,
+        options: {
+          agent: userMessage.info.agent || undefined,
+          variant: userMessage.info.model.variant,
+        },
+        directory: effectiveDirectory || '',
+      })
+    } catch (error) {
+      handleError('regenerate', error)
+    }
+  }, [messages, routeSessionId, isStreaming, handleUndo, sendMessageNow, currentModel, effectiveDirectory])
+
   // Abort handler
   const handleAbort = useCallback(async () => {
     if (!routeSessionId) return
@@ -1156,6 +1216,7 @@ export function useChatSession({
     handleUndoWithAnimation,
     handleRedoWithAnimation,
     handleForkMessage,
+    handleRegenerate,
     handleSelectSession,
     handleNewSession,
     handleVisibleMessageIdsChange,

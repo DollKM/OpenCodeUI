@@ -33,6 +33,7 @@ export * from './global'
 export * from './tool'
 export * from './lsp'
 export * from './directChat'
+export * from './queryImage'
 
 // ============================================
 // Model API Functions
