@@ -122,7 +122,8 @@
     "recommend": "Go with your recommendation",
     "continue": "Continue",
     "confirm": "Confirm",
-    "whatDoYouThink": "What do you think?"
+    "whatDoYouThink": "What do you think?",
+    "whatNext": "What next?"
   },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",

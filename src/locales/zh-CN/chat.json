@@ -119,10 +119,11 @@
   "quickSendButtons": {
     "grillMe": "Grill Me",
     "grillWithDocs": "Grill with Docs",
-    "recommend": "按你推荐的来",
+    "recommend": "推荐",
     "continue": "继续",
     "confirm": "确认",
-    "whatDoYouThink": "你觉得怎么处理？"
+    "whatDoYouThink": "你觉得呢",
+    "whatNext": "接下来？"
   },
   "inputActions": {
     "scrollToBottom": "滚动到底部",
