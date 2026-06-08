@@ -16,7 +16,6 @@ import { PaneHeader } from './PaneHeader'
 import { WaypointsIcon } from '../../components/Icons'
 import { InteractivePtySession } from '../../utils/runViaPty'
 import { useDirectory } from '../../contexts/useDirectory'
-import { uiErrorHandler } from '../../utils'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useChatSession, useModels, useModelSelection } from '../../hooks'
 import { useCancelHint } from '../../hooks/useCancelHint'
@@ -26,7 +25,7 @@ import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
-import { messageStore, paneControllerStore, useHiddenModelKeys } from '../../store'
+import { messageStore, paneControllerStore, useHiddenModelKeys, notificationStore } from '../../store'
 import { useBusyCount } from '../../store'
 import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
@@ -309,10 +308,9 @@ export const ChatPane = memo(function ChatPane({
       }
       await session.exec('codegraph index')
     } catch (err) {
-      console.log('[codegraph] error:', err)
-      uiErrorHandler('codegraph index', err)
+      const message = err instanceof Error ? err.message : String(err)
+      notificationStore.push('error', 'CodeGraph Index', message, '')
     } finally {
-      console.log('[codegraph] finally - clearing loading')
       setCodegraphLoading(false)
       session.close()
     }
