@@ -27,7 +27,6 @@ export class InteractivePtySession {
   private _markerCount = 0
   private _buf = ''
   private _isWin: boolean
-  private _SEP = '___CMD_END___'
 
   private _pending: Map<
     number,
