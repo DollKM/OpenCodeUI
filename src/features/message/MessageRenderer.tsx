@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect, useLayoutEffect, useMemo, useCallbac
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { animate } from 'motion/mini'
-import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon, RetryIcon } from '../../components/Icons'
+import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon, RetryIcon, CopyIcon, CheckIcon } from '../../components/Icons'
 import { CopyButton, SmoothHeight } from '../../components/ui'
 import { useDelayedRender, useModels } from '../../hooks'
 import { useTheme } from '../../hooks/useTheme'
@@ -281,6 +281,46 @@ const RegenerateActionButton = memo(function RegenerateActionButton({ onRegenera
       aria-label={isRegenerating ? t('regenerating') : t('regenerate')}
     >
       {isRegenerating ? <SpinnerIcon className="animate-spin" /> : <RetryIcon />}
+    </button>
+  )
+})
+
+// ============================================
+// Copy Markdown Button
+// ============================================
+
+const CopyMarkdownButton = memo(function CopyMarkdownButton({ text }: { text: string }) {
+  const { t } = useTranslation('message')
+  const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
+  const handleCopy = useCallback(async () => {
+    try {
+      const { copyTextToClipboard } = await import('../../utils')
+      await copyTextToClipboard(text)
+      setCopied(true)
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // silent
+    }
+  }, [text])
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="flex items-center gap-1 px-2 py-1.5 rounded-md transition-colors duration-150 text-[length:var(--fs-xs)] text-text-400 hover:text-text-200"
+      title={copied ? t('copiedMarkdown') : t('copyMarkdown')}
+      aria-label={copied ? t('copiedMarkdown') : t('copyMarkdown')}
+    >
+      {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+      {copied ? t('copiedMarkdown') : t('copyMarkdown')}
     </button>
   )
 })
@@ -586,6 +626,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
           {isLastAssistant && !isStreaming && <RegenerateActionButton onRegenerate={onRegenerate} />}
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
           <CopyButton text={fullText} position="static" />
+          <CopyMarkdownButton text={fullText} />
         </div>
       )}
     </div>

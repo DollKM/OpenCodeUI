@@ -6,6 +6,8 @@
   "undoFromHere": "Undo from here",
   "forkFromHere": "Fork from here",
   "forkingFromHere": "Forking...",
+  "copyMarkdown": "Copy Markdown",
+  "copiedMarkdown": "Copied!",
   "regenerate": "Regenerate",
   "regenerating": "Regenerating...",
   "stepsCount": "{{done}}/{{total}} steps",
