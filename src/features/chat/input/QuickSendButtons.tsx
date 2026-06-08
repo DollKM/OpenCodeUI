@@ -9,7 +9,7 @@ const SEND_MESSAGE: Partial<Record<(typeof QUICK_SEND_BUTTONS)[number], string>>
   recommend: '按你推荐的来',
   whatDoYouThink: '你觉得呢？',
   whatNext: '你觉得接下来该做什么？',
-  gitCommit: '根据修改内容，分批次提交git',
+  gitCommit: '根据修改的内容，分1~N批次进行Commit Git',
 }
 
 const SKILL_BUTTONS = [
