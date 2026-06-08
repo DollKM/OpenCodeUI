@@ -277,6 +277,45 @@ export function SidePanel({
   const unreadNotificationCount = useUnreadNotificationCount()
   const attentionCount = busyCount + unreadNotificationCount
 
+  // 项目开始工作的时间戳（0→1 活跃会话时记录），用于排序
+  const [projectWorkStart, setProjectWorkStart] = useState<Record<string, number>>(() => {
+    return serverStorage.getJSON<Record<string, number>>('project-work-start') ?? {}
+  })
+  const prevWorkingDirsRef = useRef<Set<string>>(new Set())
+  const busySessionDirsRef = useRef(busySessions)
+  busySessionDirsRef.current = busySessions
+
+  useEffect(() => {
+    serverStorage.setJSON('project-work-start', projectWorkStart)
+  }, [projectWorkStart])
+
+  // 监听 busySessions 变化，检测 0→1 转换
+  useEffect(() => {
+    const currentDirs = new Set(
+      busySessions.map(e => normalizeToForwardSlash(e.directory)).filter(Boolean),
+    )
+    const prevDirs = prevWorkingDirsRef.current
+    const newDirs: string[] = []
+
+    for (const dir of currentDirs) {
+      if (!prevDirs.has(dir)) {
+        newDirs.push(dir)
+      }
+    }
+
+    if (newDirs.length > 0) {
+      setProjectWorkStart(prev => {
+        const next = { ...prev }
+        for (const dir of newDirs) {
+          next[dir] = Date.now()
+        }
+        return next
+      })
+    }
+
+    prevWorkingDirsRef.current = currentDirs
+  }, [busySessions])
+
   useEffect(() => {
     return subscribeToConnectionState(setConnectionState)
   }, [])
@@ -528,15 +567,18 @@ export function SidePanel({
   const serverProjectItems = useMemo<ProjectItem[]>(() => {
     return serverProjects
       .filter(p => p.id !== 'global' && p.worktree && !hiddenProjectIds.has(p.id))
-      .map(p => ({
-        id: p.id,
-        worktree: p.worktree,
-        name: p.name || (p.sandboxes?.length > 0 ? getDirectoryName(p.sandboxes[0]) : undefined) || getDirectoryName(p.worktree) || p.worktree,
-        canReorder: false,
-        memberDirectories: [p.worktree],
-        workspaceDirectories: p.sandboxes?.length > 0 ? p.sandboxes : undefined,
-        created: p.time?.created,
-      }))
+      .map(p => {
+        const normalizedPath = normalizeToForwardSlash(p.worktree)
+        return {
+          id: p.id,
+          worktree: p.worktree,
+          name: p.name || (p.sandboxes?.length > 0 ? getDirectoryName(p.sandboxes[0]) : undefined) || getDirectoryName(normalizedPath) || p.worktree,
+          canReorder: false,
+          memberDirectories: [p.worktree],
+          workspaceDirectories: p.sandboxes?.length > 0 ? p.sandboxes : undefined,
+          created: p.time?.created,
+        }
+      })
   }, [serverProjects, hiddenProjectIds])
 
   // 合并本地项目 + 服务端额外项目，并从服务端数据补充 created 字段
@@ -566,15 +608,17 @@ export function SidePanel({
     return map
   }, [busySessions, mergedProjects])
 
-  // 排序：工作中的排在前面，同样工作状态下按 created 从新到旧
+  // 排序：工作中的排在前面，同样工作状态下按开始工作时间倒序，无记录则按创建时间
   const sortedMergedProjects = useMemo(() => {
     return [...mergedProjects].sort((a, b) => {
       const aWorking = mergedProjectStatusMap.has(a.id) ? 1 : 0
       const bWorking = mergedProjectStatusMap.has(b.id) ? 1 : 0
       if (aWorking !== bWorking) return bWorking - aWorking
-      return (b.created ?? 0) - (a.created ?? 0)
+      const aTime = projectWorkStart[a.worktree] ?? projectWorkStart[a.id] ?? a.created ?? 0
+      const bTime = projectWorkStart[b.worktree] ?? projectWorkStart[b.id] ?? b.created ?? 0
+      return bTime - aTime
     })
-  }, [mergedProjects, mergedProjectStatusMap])
+  }, [mergedProjects, mergedProjectStatusMap, projectWorkStart])
 
   const handleSelectAll = useCallback(() => {
     const allSessionIds = sessions.map(s => s.id)
