@@ -3,11 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { GitCommitIcon, GitBranchIcon } from '../../../components/Icons'
-import { createPtySession, getPtyConnectUrl, removePtySession } from '../../../api/pty'
-import { parsePtyFrame } from '../../../utils/ptyProtocol'
+import { InteractivePtySession } from '../../../utils/runViaPty'
 import { stripAnsi } from '../../../utils/ansiUtils'
 import { isTauri } from '../../../utils/tauri'
-import type { InteractiveCommand } from '../../../utils/runViaPty'
 
 interface CommitInfo {
   hash: string
@@ -26,13 +24,13 @@ interface CommitDiffModalProps {
   sourcePath: string
 }
 
-const DIFF_COMMANDS: InteractiveCommand[] = [
+const DIFF_COMMANDS: { cmd: string; args: string[] }[] = [
   { cmd: 'git', args: ['--no-pager', 'log', '--oneline', '--no-decorate', 'dev-cli..dev'] },
 ]
 
 const DIFF_LABELS = ['dev-cli → dev']
 
-const MAX_TERMINAL_LINES = 500
+
 
 function extractCommitLines(raw: string): CommitInfo[] {
   const clean = stripAnsi(raw)
@@ -60,8 +58,11 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
   const [activeCommand, setActiveCommand] = useState(-1)
   const [mergeLoading, setMergeLoading] = useState(false)
   const [mergeError, setMergeError] = useState<string | null>(null)
+  const [buildLoading, setBuildLoading] = useState(false)
+  const [buildError, setBuildError] = useState<string | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const mergeCancelRef = useRef<(() => void) | null>(null)
+  const buildCancelRef = useRef<(() => void) | null>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
   const lineBufRef = useRef<string[]>([])
 
@@ -76,16 +77,13 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
   const addToTerminal = useCallback((text: string) => {
     const lines = text.split('\n')
     for (const line of lines) {
-      if (lineBufRef.current.length >= MAX_TERMINAL_LINES) {
-        lineBufRef.current.shift()
-      }
       lineBufRef.current.push(line)
     }
     setTerminalLines([...lineBufRef.current])
     scrollToBottom()
   }, [scrollToBottom])
 
-  const fetchDiffs = useCallback(() => {
+  const fetchDiffs = useCallback(async () => {
     if (!sourcePath.trim()) return
     setLoading(true)
     setFetchError(null)
@@ -94,178 +92,76 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
     setActiveCommand(-1)
     lineBufRef.current = []
 
-    let ws: WebSocket | null = null
-    let timer: ReturnType<typeof setTimeout>
-    let closed = false
-    let ptyId: string | null = null
-    const SEP = '___CMD_END___'
+    const session = new InteractivePtySession(sourcePath, { timeout: 120000 })
+    session.onOutput = text => addToTerminal(text)
+    cancelRef.current = () => session.close()
 
-    let phase: 'old-head' | 'fetch' | 'update-dev' | 'new-head' | 'push' | 'diff' | 'done' = 'old-head'
     let oldHead: string | null = null
-    let cmdBuffer = ''
-    let markerIdx = 0
 
-    const cleanup = () => {
-      if (closed) return
-      closed = true
-      clearTimeout(timer)
-      ws?.close()
-      if (ptyId) removePtySession(ptyId, sourcePath).catch(() => {})
-    }
+    try {
+      await session.connect()
 
-    const abort = () => {
-      cleanup()
-    }
+      // old-head
+      addToTerminal('$ git rev-parse dev\n')
+      const { output: headOut } = await session.exec('git rev-parse dev')
+      oldHead = headOut.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+        .find(l => /^[a-f0-9]{40}$/i.test(l)) || null
+      addToTerminal(`[旧 HEAD] ${oldHead ?? '不存在'}\n`)
 
-    const sendNext = (cmd: string, args: string[]) => {
-      const cur = markerIdx++
-      const cmdText = `${cmd} ${args.join(' ')}`
-      addToTerminal(`$ ${cmdText}\n`)
-      ws?.send(`${cmdText} & echo ${SEP}${cur}\r`)
-    }
-
-    const handleDone = (output: string) => {
-      switch (phase) {
-        case 'old-head': {
-          const headLines = output.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-          oldHead = headLines.find(l => /^[a-f0-9]{40}$/i.test(l)) || null
-          addToTerminal(`[旧 HEAD] ${oldHead ?? '不存在'}\n`)
-          phase = 'fetch'
-          sendNext('git', ['fetch', 'upstream', '--force'])
-          break
-        }
-        case 'fetch': {
-          if (/fatal:|error:|could not/i.test(output)) {
-            setFetchError('Fetch 失败，请查看终端输出')
-            setLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'update-dev'
-          sendNext('git', ['branch', '-f', 'dev', 'upstream/dev'])
-          break
-        }
-        case 'update-dev': {
-          if (/fatal:|error:|could not/i.test(output)) {
-            setFetchError('更新本地 dev 分支失败')
-            setLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'new-head'
-          sendNext('git', ['rev-parse', 'dev'])
-          break
-        }
-        case 'new-head': {
-          if (/fatal:|error:|could not/i.test(output)) {
-            setFetchError('获取新 HEAD 失败')
-            setLoading(false)
-            cleanup()
-            return
-          }
-          const newHeadLines = output.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-          const newHead = newHeadLines.find(l => /^[a-f0-9]{40}$/i.test(l)) || null
-          addToTerminal(`[新 HEAD] ${newHead ?? '不存在'}\n`)
-          if (oldHead === newHead) {
-            addToTerminal('[跳过] dev 无变化，跳过推送\n')
-            phase = 'diff'
-            sendNext(DIFF_COMMANDS[0].cmd, DIFF_COMMANDS[0].args)
-          } else {
-            addToTerminal('[推送] dev 已更新，推送到 origin/dev\n')
-            phase = 'push'
-            sendNext('git', ['push', 'origin', 'dev', '--no-verify'])
-          }
-          break
-        }
-        case 'push': {
-          if (/fatal:|error:|! \[rejected\]/i.test(output)) {
-            setFetchError('推送失败，请查看终端输出')
-            setLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'diff'
-          sendNext(DIFF_COMMANDS[0].cmd, DIFF_COMMANDS[0].args)
-          break
-        }
-        case 'diff': {
-          const commits = extractCommitLines(output)
-          console.log(`[CommitDiff] dev-cli → dev: ${commits.length} commits`)
-          if (commits.length > 0) {
-            console.log(`[CommitDiff]   first: ${commits[0].hash} ${commits[0].message}`)
-            console.log(`[CommitDiff]   last:  ${commits[commits.length - 1].hash} ${commits[commits.length - 1].message}`)
-          }
-          setDiffs([{ label: 'dev-cli → dev', commits, error: null }])
-          setActiveCommand(1)
-          phase = 'done'
-          setLoading(false)
-          cleanup()
-          break
-        }
-        default:
-          break
-      }
-    }
-
-    createPtySession({ command: 'cmd', cwd: sourcePath }, sourcePath).then(pty => {
-      if (closed) {
-        removePtySession(pty.id, sourcePath).catch(() => {})
+      // fetch
+      addToTerminal('$ git fetch upstream --force\n')
+      const { output: fetchOut } = await session.exec('git fetch upstream --force')
+      if (/fatal:|error:|could not/i.test(fetchOut)) {
+        setFetchError('Fetch 失败，请查看终端输出')
         return
       }
-      ptyId = pty.id
-      timer = setTimeout(() => {
-        setFetchError('执行超时 (120s)')
-        setLoading(false)
-        cleanup()
-      }, 120_000)
 
-      const wsUrl = getPtyConnectUrl(ptyId, sourcePath, { includeAuthInUrl: true })
-      ws = new WebSocket(wsUrl)
-      ws.binaryType = 'arraybuffer'
-
-      ws.onopen = () => {
-        if (closed) { ws?.close(); return }
-        sendNext('git', ['rev-parse', 'dev'])
+      // update-dev
+      addToTerminal('$ git branch -f dev upstream/dev\n')
+      const { output: updateOut } = await session.exec('git branch -f dev upstream/dev')
+      if (/fatal:|error:|could not/i.test(updateOut)) {
+        setFetchError('更新本地 dev 分支失败')
+        return
       }
 
-      ws.onmessage = event => {
-        if (closed) return
-        const frame = parsePtyFrame(event.data)
-        if (frame?.kind === 'data') {
-          const clean = stripAnsi(frame.data)
-          cmdBuffer += clean
-          addToTerminal(clean)
+      // new-head
+      addToTerminal('$ git rev-parse dev\n')
+      const { output: newHeadOut } = await session.exec('git rev-parse dev')
+      if (/fatal:|error:|could not/i.test(newHeadOut)) {
+        setFetchError('获取新 HEAD 失败')
+        return
+      }
+      const newHead = newHeadOut.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+        .find(l => /^[a-f0-9]{40}$/i.test(l)) || null
+      addToTerminal(`[新 HEAD] ${newHead ?? '不存在'}\n`)
 
-          const markerMatch = cmdBuffer.match(new RegExp(`(?:^|\\r?\\n)${SEP}(\\d+)`))
-          if (markerMatch) {
-            const cmdOut = cmdBuffer.substring(0, markerMatch.index).trim()
-            cmdBuffer = ''
-            handleDone(cmdOut)
-          }
+      if (oldHead === newHead) {
+        addToTerminal('[跳过] dev 无变化，跳过推送\n')
+      } else {
+        addToTerminal('[推送] dev 已更新，推送到 origin/dev\n')
+        const { output: pushOut } = await session.exec('git push origin dev --no-verify')
+        if (/fatal:|error:|! \[rejected\]/i.test(pushOut)) {
+          setFetchError('推送失败，请查看终端输出')
+          return
         }
       }
 
-      ws.onerror = () => {
-        if (!closed) {
-          setFetchError('WebSocket 连接错误')
-          setLoading(false)
-          cleanup()
-        }
+      // diff
+      const { output: diffOut } = await session.exec(`${DIFF_COMMANDS[0].cmd} ${DIFF_COMMANDS[0].args.join(' ')}`)
+      const commits = extractCommitLines(diffOut)
+      console.log(`[CommitDiff] dev-cli → dev: ${commits.length} commits`)
+      if (commits.length > 0) {
+        console.log(`[CommitDiff]   first: ${commits[0].hash} ${commits[0].message}`)
+        console.log(`[CommitDiff]   last:  ${commits[commits.length - 1].hash} ${commits[commits.length - 1].message}`)
       }
-
-      ws.onclose = () => {
-        if (!closed && phase !== 'done') {
-          setFetchError('连接意外关闭')
-          setLoading(false)
-          cleanup()
-        }
-      }
-    }).catch(error => {
-      setFetchError(error instanceof Error ? error.message : '创建 PTY 会话失败')
+      setDiffs([{ label: 'dev-cli → dev', commits, error: null }])
+      setActiveCommand(1)
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : '执行失败')
+    } finally {
       setLoading(false)
-    })
-
-    cancelRef.current = abort
+      session.close()
+    }
   }, [sourcePath, addToTerminal])
 
   const openVSCode = useCallback((error: string) => {
@@ -280,193 +176,109 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
     }
   }, [sourcePath, addToTerminal])
 
-  const handleMerge = useCallback(() => {
+  const handleBuild = useCallback(async () => {
+    if (!sourcePath.trim()) return
+    setBuildLoading(true)
+    setBuildError(null)
+    addToTerminal('\n========== 开始构建 ==========\n')
+
+    const session = new InteractivePtySession(sourcePath, { timeout: 600000 })
+    session.onOutput = text => addToTerminal(text)
+    buildCancelRef.current = () => session.close()
+
+    try {
+      await session.connect()
+
+      addToTerminal('$ opencode --version\n')
+      const { output: versionOut } = await session.exec('opencode --version')
+      const savedVersion = versionOut.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop() || ''
+      addToTerminal(`[版本] ${savedVersion}\n`)
+
+      addToTerminal('$ bun install\n')
+      const { output: bunOut } = await session.exec('bun install')
+      if (/error|ERR_PNPM|ELIFECYCLE/i.test(bunOut)) {
+        setBuildError('bun install 失败')
+        return
+      }
+
+      const exePath = 'packages\\opencode\\dist\\opencode-windows-x64\\bin\\opencode.exe'
+      if (savedVersion) {
+        addToTerminal(`$ move -Force ${exePath} ${exePath}.${savedVersion}\n`)
+        const { output: backupOut } = await session.exec(`move -Force ${exePath} ${exePath}.${savedVersion}`)
+        if (/error:|could not|The process cannot/i.test(backupOut) && !/The system cannot find the file/i.test(backupOut)) {
+          setBuildError('备份 exe 失败')
+          return
+        }
+      } else {
+        addToTerminal('[跳过] 版本号为空，跳过备份\n')
+      }
+
+      addToTerminal('$ bun run build --single\n')
+      const { output: buildOut } = await session.exec('bun run ./packages/opencode/script/build.ts --single')
+      if (/error:|ELIFECYCLE|Build failed|FAILED/i.test(buildOut)) {
+        setBuildError('构建失败，请查看终端输出')
+        return
+      }
+
+      addToTerminal('$ git push origin dev-cli --no-verify\n')
+      const { output: pushOut } = await session.exec('git push origin dev-cli --no-verify')
+      if (/fatal:|error:|! \[rejected\]/i.test(pushOut)) {
+        setBuildError('推送 dev-cli 到 origin 失败')
+        return
+      }
+
+      addToTerminal('\n========== 构建完成 ==========\n')
+    } catch (err) {
+      setBuildError(err instanceof Error ? err.message : '构建失败')
+    } finally {
+      setBuildLoading(false)
+      session.close()
+    }
+  }, [sourcePath, addToTerminal])
+
+  const handleMerge = useCallback(async () => {
     if (!sourcePath.trim()) return
     setMergeLoading(true)
     setMergeError(null)
     setFetchError(null)
-    addToTerminal('\n========== 开始合并 dev → dev-cli ==========\n')
+    addToTerminal('\n========== 合并 dev → dev-cli ==========\n')
 
-    let ws: WebSocket | null = null
-    let timer: ReturnType<typeof setTimeout>
-    let closed = false
-    let ptyId: string | null = null
-    const SEP = '___CMD_END___'
+    const session = new InteractivePtySession(sourcePath, { timeout: 300000 })
+    session.onOutput = text => addToTerminal(text)
+    mergeCancelRef.current = () => session.close()
 
-    type MergePhase = 'check-status' | 'merge' | 'version' | 'bun-install' | 'backup' | 'build' | 'push' | 'done'
-    let phase: MergePhase = 'check-status'
-    let savedVersion = ''
-    let cmdBuffer = ''
-    let markerIdx = 0
+    try {
+      await session.connect()
 
-    const cleanup = () => {
-      if (closed) return
-      closed = true
-      clearTimeout(timer)
-      ws?.close()
-      if (ptyId) removePtySession(ptyId, sourcePath).catch(() => {})
-    }
-
-    const sendNext = (cmd: string, args: string[]) => {
-      const cur = markerIdx++
-      const cmdText = `${cmd} ${args.join(' ')}`
-      addToTerminal(`$ ${cmdText}\n`)
-      ws?.send(`${cmdText} & echo ${SEP}${cur}\r`)
-    }
-
-    const handleDone = (output: string) => {
-      switch (phase) {
-        case 'check-status': {
-          const lines = output.split(/\r?\n/)
-            .map(l => l.trim())
-            .filter(l => /^(?:[MADRCU?! ][MADRCU?! ])\s/.test(l))
-          if (lines.length > 0) {
-            openVSCode('dev-cli 有未提交的修改，请先提交或 stash')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'merge'
-          sendNext('git', ['merge', 'dev', '--no-ff'])
-          break
-        }
-        case 'merge': {
-          if (/CONFLICT|fatal:|error:|could not/i.test(output)) {
-            openVSCode('合并冲突，请手动解决')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'version'
-          sendNext('opencode', ['--version'])
-          break
-        }
-        case 'version': {
-          savedVersion = output.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop() || ''
-          addToTerminal(`[版本] ${savedVersion}\n`)
-          phase = 'bun-install'
-          sendNext('bun', ['install'])
-          break
-        }
-        case 'bun-install': {
-          if (/error|ERR_PNPM|ELIFECYCLE/i.test(output)) {
-            setMergeError('bun install 失败')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'backup'
-          const exePath = 'packages\\opencode\\dist\\opencode-windows-x64\\bin\\opencode.exe'
-          if (!savedVersion) {
-            addToTerminal('[跳过] 版本号为空，跳过备份\n')
-            sendNext('bun', ['run', './packages/opencode/script/build.ts', '--single'])
-          } else {
-            sendNext('move', ['/Y', exePath, `${exePath}.${savedVersion}`])
-          }
-          break
-        }
-        case 'backup': {
-          if (/The system cannot find the file/i.test(output)) {
-            addToTerminal('[跳过] 未找到现有的 opencode.exe，跳过备份\n')
-          } else if (/error:|could not|The process cannot/i.test(output)) {
-            setMergeError('备份 exe 失败')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'build'
-          sendNext('bun', ['run', './packages/opencode/script/build.ts', '--single'])
-          break
-        }
-        case 'build': {
-          if (/error:|ELIFECYCLE|Build failed|FAILED/i.test(output)) {
-            setMergeError('构建失败，请查看终端输出')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          phase = 'push'
-          sendNext('git', ['push', 'origin', 'dev-cli', '--no-verify'])
-          break
-        }
-        case 'push': {
-          if (/fatal:|error:|! \[rejected\]/i.test(output)) {
-            setMergeError('推送 dev-cli 到 origin 失败')
-            setMergeLoading(false)
-            cleanup()
-            return
-          }
-          addToTerminal('\n========== 合并完成 ==========\n')
-          phase = 'done'
-          setMergeLoading(false)
-          cleanup()
-          break
-        }
-        default:
-          break
-      }
-    }
-
-    createPtySession({ command: 'cmd', cwd: sourcePath }, sourcePath).then(pty => {
-      if (closed) {
-        removePtySession(pty.id, sourcePath).catch(() => {})
+      addToTerminal('$ git status --porcelain\n')
+      const { output: statusOut } = await session.exec('git status --porcelain')
+      const modifiedLines = statusOut.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => /^(?:[MADRCU?! ][MADRCU?! ])\s/.test(l))
+      if (modifiedLines.length > 0) {
+        openVSCode('dev-cli 有未提交的修改，请先提交或 stash')
         return
       }
-      ptyId = pty.id
-      timer = setTimeout(() => {
-        setMergeError('合并超时 (300s)')
-        setMergeLoading(false)
-        cleanup()
-      }, 300_000)
 
-      const wsUrl = getPtyConnectUrl(ptyId, sourcePath, { includeAuthInUrl: true })
-      ws = new WebSocket(wsUrl)
-      ws.binaryType = 'arraybuffer'
-
-      ws.onopen = () => {
-        if (closed) { ws?.close(); return }
-        sendNext('git', ['status', '--porcelain'])
+      addToTerminal('$ git merge dev --no-ff\n')
+      const { output: mergeOut } = await session.exec('git merge dev --no-ff')
+      if (/CONFLICT|fatal:|error:|could not/i.test(mergeOut)) {
+        openVSCode('合并冲突，请手动解决')
+        return
       }
 
-      ws.onmessage = event => {
-        if (closed) return
-        const frame = parsePtyFrame(event.data)
-        if (frame?.kind === 'data') {
-          const clean = stripAnsi(frame.data)
-          cmdBuffer += clean
-          addToTerminal(clean)
-
-          const markerMatch = cmdBuffer.match(new RegExp(`(?:^|\\r?\\n)${SEP}(\\d+)`))
-          if (markerMatch) {
-            const cmdOut = cmdBuffer.substring(0, markerMatch.index).trim()
-            cmdBuffer = ''
-            handleDone(cmdOut)
-          }
-        }
-      }
-
-      ws.onerror = () => {
-        if (!closed) {
-          setMergeError('WebSocket 连接错误')
-          setMergeLoading(false)
-          cleanup()
-        }
-      }
-
-      ws.onclose = () => {
-        if (!closed && phase !== 'done') {
-          setMergeError('连接意外关闭')
-          setMergeLoading(false)
-          cleanup()
-        }
-      }
-    }).catch(error => {
-      setMergeError(error instanceof Error ? error.message : '创建 PTY 会话失败')
+      addToTerminal('[完成] 合并成功，继续构建...\n')
+      session.close()
       setMergeLoading(false)
-    })
-
-    mergeCancelRef.current = cleanup
-  }, [sourcePath, addToTerminal, openVSCode])
+      handleBuild()
+      return
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : '合并失败')
+    } finally {
+      setMergeLoading(false)
+      session.close()
+    }
+  }, [sourcePath, addToTerminal, openVSCode, handleBuild])
 
   useEffect(() => {
     if (isOpen && !cancelRef.current) {
@@ -478,6 +290,8 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
       cancelRef.current = null
       mergeCancelRef.current?.()
       mergeCancelRef.current = null
+      buildCancelRef.current?.()
+      buildCancelRef.current = null
     }
   }, [isOpen, fetchDiffs])
 
@@ -491,7 +305,7 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
             className="flex-1 rounded-lg border border-border-200/50 bg-[#1a1a1a] p-3 overflow-auto font-mono text-xs leading-relaxed whitespace-pre"
             style={{ maxHeight: '55vh', minHeight: 200 }}
           >
-            {terminalLines.length === 0 && !loading && !mergeLoading && !fetchError && !mergeError && (
+            {terminalLines.length === 0 && !loading && !mergeLoading && !buildLoading && !fetchError && !mergeError && !buildError && (
               <span className="text-text-500">Waiting...</span>
             )}
             {terminalLines.map((line, i) => {
@@ -501,7 +315,7 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
               const isContinuation = trimmed === '>>' || trimmed.startsWith('>> ')
               const isBanner = /^(Microsoft Windows|\(c\) Microsoft|保留)/.test(trimmed) || /^[A-Z]:\\.+>$/.test(trimmed)
               const isBlank = !trimmed
-              const isErrorLine = (fetchError || mergeError) && i === terminalLines.length - 1
+              const isErrorLine = (fetchError || mergeError || buildError) && i === terminalLines.length - 1
               return (
                 <div
                   key={i}
@@ -516,7 +330,7 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
                 </div>
               )
             })}
-            {(loading || mergeLoading) && (
+            {(loading || mergeLoading || buildLoading) && (
               <div className="text-gray-500 animate-pulse mt-1">▌</div>
             )}
           </div>
@@ -539,7 +353,13 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
               </div>
             )}
 
-            {!loading && !fetchError && diffs.length === 0 && terminalLines.length > 0 && !mergeLoading && (
+            {buildError && !buildLoading && (
+              <div className="rounded-lg border border-danger-100/20 bg-danger-100/10 px-3 py-2 text-xs text-danger-100">
+                {buildError}
+              </div>
+            )}
+
+            {!loading && !fetchError && diffs.length === 0 && terminalLines.length > 0 && !mergeLoading && !buildLoading && (
               <div className="text-text-400 text-xs py-4 text-center">
                 {t('about.commitDiffEmpty') || 'No differences found between branches.'}
               </div>
@@ -589,17 +409,20 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
       </div>
 
       <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border-200/30">
-        <Button size="sm" variant="primary" isLoading={mergeLoading} disabled={loading || mergeLoading} onClick={handleMerge}>
+        <Button size="sm" variant="primary" isLoading={mergeLoading} disabled={loading || mergeLoading || buildLoading} onClick={handleMerge}>
           Merge dev → dev-cli
         </Button>
+        <Button size="sm" variant="secondary" isLoading={buildLoading} disabled={loading || mergeLoading || buildLoading} onClick={handleBuild}>
+          Build & Push
+        </Button>
         <div className="flex-1" />
-        {(loading || mergeLoading) && (
-          <span className="text-xs text-text-400">{mergeLoading ? 'Merging...' : (t('about.commitDiffLoading') || 'Executing...')}</span>
-        )}
-        <Button size="sm" variant="secondary" isLoading={loading} disabled={loading || mergeLoading} onClick={fetchDiffs}>
+        {loading && <span className="text-xs text-text-400">{t('about.commitDiffLoading') || 'Executing...'}</span>}
+        {mergeLoading && <span className="text-xs text-text-400">Merging...</span>}
+        {buildLoading && <span className="text-xs text-text-400">Building...</span>}
+        <Button size="sm" variant="secondary" isLoading={loading} disabled={loading || mergeLoading || buildLoading} onClick={fetchDiffs}>
           {t('common:refresh') || 'Refresh'}
         </Button>
-        <Button size="sm" variant="ghost" disabled={mergeLoading} onClick={onClose}>
+        <Button size="sm" variant="ghost" disabled={mergeLoading || buildLoading} onClick={onClose}>
           {t('common:close') || 'Close'}
         </Button>
       </div>
