@@ -6,6 +6,11 @@ import { GitCommitIcon, GitBranchIcon } from '../../../components/Icons'
 import { InteractivePtySession } from '../../../utils/runViaPty'
 import { stripAnsi } from '../../../utils/ansiUtils'
 import { isTauri } from '../../../utils/tauri'
+import { createSession } from '../../../api/session'
+import { sendMessageAsync } from '../../../api/message'
+import { getCommitModel } from '../../../utils/modelUtils'
+import { notificationStore } from '../../../store/notificationStore'
+import { useRouter } from '../../../hooks/useRouter'
 
 interface CommitInfo {
   hash: string
@@ -51,6 +56,7 @@ function extractCommitLines(raw: string): CommitInfo[] {
 
 export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModalProps) {
   const { t } = useTranslation(['settings'])
+  const { navigateToSession } = useRouter()
   const [diffs, setDiffs] = useState<BranchDiff[]>([])
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -60,6 +66,9 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
   const [mergeError, setMergeError] = useState<string | null>(null)
   const [buildLoading, setBuildLoading] = useState(false)
   const [buildError, setBuildError] = useState<string | null>(null)
+  const [mergeFailed, setMergeFailed] = useState(false)
+  const [conflictHandling, setConflictHandling] = useState(false)
+  const [conflictError, setConflictError] = useState<string | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const mergeCancelRef = useRef<(() => void) | null>(null)
   const buildCancelRef = useRef<(() => void) | null>(null)
@@ -263,7 +272,12 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
       addToTerminal('$ git merge dev --no-ff\n')
       const { output: mergeOut } = await session.exec('git merge dev --no-ff')
       if (/CONFLICT|fatal:|error:|could not/i.test(mergeOut)) {
-        openVSCode('合并冲突，请手动解决')
+        const isConflict = /CONFLICT/i.test(mergeOut)
+        if (isConflict) {
+          setMergeFailed(true)
+          return
+        }
+        openVSCode('合并失败，请手动解决')
         return
       }
 
@@ -280,6 +294,90 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
     }
   }, [sourcePath, addToTerminal, openVSCode, handleBuild])
 
+  const handleAutoFixMerge = useCallback(async () => {
+    if (!sourcePath.trim()) return
+
+    const commitModel = getCommitModel()
+    if (!commitModel) {
+      notificationStore.push('error', '提示', '请先配置 commit model', '')
+      return
+    }
+
+    setConflictHandling(true)
+    setConflictError(null)
+    addToTerminal('\n========== 自动处理合并冲突 ==========\n')
+
+    const session = new InteractivePtySession(sourcePath, { timeout: 30000 })
+    session.onOutput = text => addToTerminal(text)
+
+    try {
+      await session.connect()
+
+      addToTerminal('$ git diff --name-only --diff-filter=U\n')
+      const { output: conflictFilesOut } = await session.exec('git diff --name-only --diff-filter=U')
+      const conflictFiles = conflictFilesOut.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+
+      addToTerminal('$ git log dev-cli..dev --oneline\n')
+      const { output: devCommitsOut } = await session.exec('git log dev-cli..dev --oneline')
+
+      addToTerminal('$ git log dev..dev-cli --oneline\n')
+      const { output: currentCommitsOut } = await session.exec('git log dev..dev-cli --oneline')
+
+      session.close()
+
+      const prompt = [
+        `项目路径: ${sourcePath}`,
+        '当前分支: dev-cli',
+        '正在将 dev 合并到 dev-cli，发生合并冲突。',
+        '',
+        '冲突文件:',
+        ...(conflictFiles.length > 0 ? conflictFiles : ['(无冲突文件列表)']),
+        '',
+        '待合并的 dev 分支提交:',
+        ...(devCommitsOut.trim() ? devCommitsOut.split(/\r?\n/).filter(Boolean) : ['(无)']),
+        '',
+        '当前 dev-cli 分支最近的提交:',
+        ...(currentCommitsOut.trim() ? currentCommitsOut.split(/\r?\n/).filter(Boolean) : ['(无)']),
+        '',
+        '请按以下步骤处理：',
+        '1. 查看每个冲突文件，了解两边的改动',
+        '2. 解决所有冲突（如果遇到无法确认的逻辑，先问我确认后再处理）',
+        '3. 确认所有冲突已解决：git diff --check',
+        '4. 提交合并，写一条合适的合并提交信息',
+      ].join('\n')
+      addToTerminal('[信息] 正在创建新 session...\n')
+
+      const newSession = await createSession({
+        title: '自动处理合并冲突',
+        directory: sourcePath,
+      })
+
+      addToTerminal(`[信息] 新 session ID: ${newSession.id}\n`)
+      addToTerminal('[信息] 正在发送 prompt...\n')
+
+      await sendMessageAsync({
+        sessionId: newSession.id,
+        text: prompt,
+        attachments: [],
+        model: {
+          providerID: commitModel.providerId,
+          modelID: commitModel.modelId,
+        },
+        directory: sourcePath,
+      })
+
+      onClose()
+      navigateToSession(newSession.id, sourcePath)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '自动处理合并冲突失败'
+      setConflictError(msg)
+      addToTerminal(`\n[错误] ${msg}\n`)
+    } finally {
+      setConflictHandling(false)
+      session.close()
+    }
+  }, [sourcePath, addToTerminal, onClose, navigateToSession])
+
   useEffect(() => {
     if (isOpen && !cancelRef.current) {
       const id = setTimeout(fetchDiffs, 0)
@@ -292,6 +390,9 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
       mergeCancelRef.current = null
       buildCancelRef.current?.()
       buildCancelRef.current = null
+      setMergeFailed(false)
+      setConflictHandling(false)
+      setConflictError(null)
     }
   }, [isOpen, fetchDiffs])
 
@@ -409,20 +510,26 @@ export function CommitDiffModal({ isOpen, onClose, sourcePath }: CommitDiffModal
       </div>
 
       <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border-200/30">
-        <Button size="sm" variant="primary" isLoading={mergeLoading} disabled={loading || mergeLoading || buildLoading} onClick={handleMerge}>
+        <Button size="sm" variant="primary" isLoading={mergeLoading} disabled={loading || mergeLoading || buildLoading || conflictHandling} onClick={handleMerge}>
           Merge dev → dev-cli
         </Button>
-        <Button size="sm" variant="secondary" isLoading={buildLoading} disabled={loading || mergeLoading || buildLoading} onClick={handleBuild}>
+        {mergeFailed && (
+          <Button size="sm" variant="danger" isLoading={conflictHandling} disabled={conflictHandling} onClick={handleAutoFixMerge}>
+            {conflictHandling ? '' : t('about.autoFixMerge') || '自动处理失败合并'}
+          </Button>
+        )}
+        <Button size="sm" variant="secondary" isLoading={buildLoading} disabled={loading || mergeLoading || buildLoading || conflictHandling} onClick={handleBuild}>
           Build & Push
         </Button>
         <div className="flex-1" />
         {loading && <span className="text-xs text-text-400">{t('about.commitDiffLoading') || 'Executing...'}</span>}
         {mergeLoading && <span className="text-xs text-text-400">Merging...</span>}
         {buildLoading && <span className="text-xs text-text-400">Building...</span>}
-        <Button size="sm" variant="secondary" isLoading={loading} disabled={loading || mergeLoading || buildLoading} onClick={fetchDiffs}>
+        {conflictError && <span className="text-xs text-danger-100">{conflictError}</span>}
+        <Button size="sm" variant="secondary" isLoading={loading} disabled={loading || mergeLoading || buildLoading || conflictHandling} onClick={fetchDiffs}>
           {t('common:refresh') || 'Refresh'}
         </Button>
-        <Button size="sm" variant="ghost" disabled={mergeLoading || buildLoading} onClick={onClose}>
+        <Button size="sm" variant="ghost" disabled={mergeLoading || buildLoading || conflictHandling} onClick={onClose}>
           {t('common:close') || 'Close'}
         </Button>
       </div>
