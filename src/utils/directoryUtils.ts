@@ -121,11 +121,12 @@ export function setDetectedPathStyle(style: DetectedPathStyle): void {
   _detectedStyle = style
   try {
     serverStorage.set(STORAGE_KEY_DETECTED_STYLE, style)
-    clientDataStorage.setItem('opencode-detected-path-style', style)
+    if (previousStyle !== style) {
+      clientDataStorage.setItem('opencode-detected-path-style', style)
+    }
   } catch {
     // ignore
   }
-  // 只在 auto 模式且风格变化时通知
   if (getPathMode() === 'auto' && previousStyle !== style) {
     notifyListeners()
   }
